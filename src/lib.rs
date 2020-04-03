@@ -104,22 +104,22 @@ pub fn compute_grid_dimensions(x1: f64, x2: f64, y1: f64, y2: f64, dmc: f64, fil
 }
 
 
-struct Container<T: Scalar, I1: Dim + DimName, J1: Dim + DimName>
-    where DefaultAllocator: Allocator<T, I1, J1>
-{
-    matrix: MatrixMN<T, I1, J1>
-}
-
-impl<T:Scalar,I1:Dim+DimName,J1:Dim+DimName> Container<T, I1, J1> {
-    pub fn new(defVal: &impl Scalar,sizeX:&impl Dim+DimName, sizeY:&impl Dim+DimName) -> Container<T,I1,J1> where
-    T: Scalar,
-    I1: Dim + DimName,
-    J1: Dim + DimName,
-
-    {
-
-    }
-}
+// struct Container<T: Scalar, I1: Dim + DimName, J1: Dim + DimName>
+//     where DefaultAllocator: Allocator<T, I1, J1>
+// {
+//     matrix: MatrixMN<T, I1, J1>
+// }
+//
+// impl<T:Scalar,I1:Dim+DimName,J1:Dim+DimName> Container<T, I1, J1> {
+//     pub fn new(defVal: &impl Scalar,sizeX:&impl Dim+DimName, sizeY:&impl Dim+DimName) -> Container<T,I1,J1> where
+//     T: Scalar,
+//     I1: Dim + DimName,
+//     J1: Dim + DimName,
+//
+//     {
+//
+//     }
+// }
 
 impl ABOSGrid {
     pub fn new(points: Vec<Vec<f64>>, filter: f64, degree: i8) -> ABOSGrid {
@@ -145,10 +145,12 @@ impl ABOSGrid {
         let (i1,j1,dx,dy) = compute_grid_dimensions(x1,x2,y1,y2,dmc,filter);
 
         //step 4: Create P and DP
-        // let Pcontainer: Container<f64,i1,j1> = Container { matrix: (f64,i1,j1) };
+
+        let P: MatrixMN<f64,Dynamic,Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), 0.0);
+
         // Pcontainer.matrix::
 
-        // println!("{:?}",P);
+        println!("{:?}",P);
         // step 0: compute Q R and L
         ABOSGrid {
             degree,
