@@ -5,12 +5,12 @@ use rand::prelude::*;
 fn main() {
     let mut points: Vec<Vec<f64>> = vec![];
     let mut rng = rand::thread_rng();
-    for i in 0..10 {
+    for _ in 0..10 {
         let new_point:Vec<f64> = vec!(rng.gen_range(200.0,340.0),rng.gen_range(100.0,200.0),rng.gen_range(0.0,10.0));
         points.push(new_point);
     }
 
-    let test = ABOSGrid::new(points,1.0);
+    let _test = ABOSGrid::new(points,10000.0, 0);
 }
 //
 // The size of the regular rectangular grid is set according to the following points:
