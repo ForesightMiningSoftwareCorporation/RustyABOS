@@ -10,20 +10,23 @@ fn main() {
         points.push(new_point);
     }
 
-    let _test = ABOSGrid::new(points,10000.0, 0);
-}
-//
-// The size of the regular rectangular grid is set according to the following points:
-// 1. The greater side of the rectangular domain D is selected, i.e. greater number of
-// x21= x2−x1 and y21= y2−y1 . Without loss of generality we can assume
-// that x21 is greater.
-// 2. The minimal grid size is computed as i0=round  x21/ Dmc  , where Dmc is the
-// minimal Chebyshev distance between pairs of points XYZ:
-// Dmc=min {max {∣Xi−X j
-// ∣,∣Yi−Y j
-// ∣} ; i≠ j ∧ i , j=1,, n}
-// 3. The optimal grid size is set as: i1=max { k⋅i0 ; k=1, ,5 ∧ k⋅i0Filter }
-// 4. The second size of the grid is: j1=round  y21/ x21⋅i1−11
-// The presented procedure ensures that the difference between Dx and Dy is minimal i.e. the
-// regular rectangular grid is as close to a square grid as possible.
+    let mut test = ABOSGrid::new(points,50.0, 0);
 
+
+
+    //iteration cycle
+    // 1. Filtering points XYZ, specification of the grid, computation of the matrices NB and
+    // K, Z→DZ, 0→DP
+    test.init_distance_point_matrixes(); //prepare nb/k/kmax
+    // 2. Per partes constant interpolation of values DZ into the matrix P
+    test.per_parts_constant_interpolation();
+    // 3. Tensioning and smoothing of the matrix P
+    test.tension_loop();
+    // 4. P+DP→P
+    // 5. ( , )
+    // i Xi Yi Z − f →DZi
+    // 6. If the maximal difference max { DZi
+    //     ,i=1,, n } does not exceed defined precision, the algorithm is finished
+    // 7. P→DP, continue from step 2 again (= start the next iteration cycle)
+    // test.output_all_matrixes();
+}
