@@ -5,14 +5,12 @@ use rand::prelude::*;
 fn main() {
     let mut points: Vec<Vec<f64>> = vec![];
     let mut rng = rand::thread_rng();
-    for _ in 0..10 {
-        let new_point:Vec<f64> = vec!(rng.gen_range(200.0,340.0),rng.gen_range(100.0,200.0),rng.gen_range(0.0,10.0));
+    for _ in 0..3 {
+        let new_point:Vec<f64> = vec!(rng.gen_range(200.0,300.0),rng.gen_range(100.0,200.0),rng.gen_range(0.0,10.0));
         points.push(new_point);
     }
 
-    let mut test = ABOSGrid::new(points,50.0, 0);
-
-
+    let mut test = ABOSGrid::new(points,30.0, 0);
 
     //iteration cycle
     // 1. Filtering points XYZ, specification of the grid, computation of the matrices NB and
@@ -28,5 +26,5 @@ fn main() {
     // 6. If the maximal difference max { DZi
     //     ,i=1,, n } does not exceed defined precision, the algorithm is finished
     // 7. P→DP, continue from step 2 again (= start the next iteration cycle)
-    // test.output_all_matrixes();
+    test.output_all_matrixes();
 }

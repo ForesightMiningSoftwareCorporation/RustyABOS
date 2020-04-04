@@ -35,16 +35,12 @@ fn get_min_chebyshev_distance(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64 {
     return min_chebyshev_distance;
 }
 
-pub struct ABOSInputs {
-    points: Vec<na::Vector3<f64>>
-}
-
 pub struct ABOSGrid {
     degree: i8,
     r: usize,
     l: f64,
     filter: f64,
-    n:usize,
+    n: usize,
     //INPUT resolution parameter
     xyz_points: MatrixMN<f64, Dynamic, U3>,
     //INPUT all points XYZ
@@ -87,63 +83,6 @@ pub struct ABOSGrid {
     rs: f64, // Resolution of map
 }
 
-pub fn compute_grid_dimensions(x1: f64, x2: f64, y1: f64, y2: f64, dmc: f64, filter: f64)
-                               -> (i32, i32, f64, f64) {
-    //step 1: Always assuming x side is greater
-
-    //step 2: grid size is defined as i0=round  x21/ Dmc 
-
-    let i0: i32 = f64::round((x2 - x1) / dmc) as i32;
-    //step 3 find your grid size for your larger dimension set as i1 = i0*k largest possible while less than Filter
-    let mut i1: i32 = 0;
-    let mut i = 0;
-    loop {
-        i += 1;
-        let potential_val: i32 = i0 * i;
-        if filter > potential_val as f64 {
-            i1 = potential_val;
-        } else {
-            break;
-        }
-    }
-    //step 5 find your grid size for your smaller dimension such that it is as close to that of il as possible
-    let j1: i32 = f64::round((y2 - y1) / (x2 - x1) * (i1 as f64 - 1.0)) as i32;
-
-    let dx = (x2 - x1) / i1 as f64;
-    let dy = (y2 - y1) / j1 as f64;
-
-    return (i1, j1, dx, dy);
-}
-
-fn compute_rl(degree: i8, k_max: usize) -> (usize, f64) {
-    return match degree {
-        0 => {
-            let r = 1;
-            let l = 0.7 / ((0.107 * k_max as f64 - 0.714) * k_max as f64);
-            (r, l)
-        }
-        1 => {
-            let r = 1;
-            let l = 1.0 / ((0.107 * k_max as f64 - 0.714) * k_max as f64);
-            (r, l)
-        }
-        2 => {
-            let r = 1;
-            let l = 1.0 / (0.0360625 * k_max as f64 + 0.192);
-            (r, l)
-        }
-        3 => {
-            let r = 0;
-            let l = 0.7 / ((0.107 * k_max as f64 - 0.714) * k_max as f64);
-            (r, l)
-        }
-        _ => {
-            (0, 0.0)
-        }
-    };
-}
-
-
 impl ABOSGrid {
     pub fn new(points: Vec<Vec<f64>>, filter: f64, degree: i8) -> ABOSGrid {
         let mut vec = Vec::new(); //real function call would just pass the vector in here
@@ -153,7 +92,7 @@ impl ABOSGrid {
             }
         }
         let point_count = points.len();
-        let dm: DMatrix<_> = DMatrix::from_iterator(3, point_count, vec.into_iter());
+        let dm: DMatrix<f64> = DMatrix::from_iterator(3, point_count, vec.into_iter());
         let fix_dm = dm.transpose();
 
         //step 1: make an array with all the points
@@ -182,7 +121,7 @@ impl ABOSGrid {
         let rs = if res_x > res_y { res_x } else { res_y };
         // step 5: compute R and L
         let (r, l) = compute_rl(degree, k_max);
-        let n = std::cmp::max(4,k_max/2 + 2);
+        let n = std::cmp::max(4, k_max / 2 + 2);
         ABOSGrid {
             degree,
             r,
@@ -243,31 +182,25 @@ impl ABOSGrid {
         };
     }
 
-    pub fn tension_loop(&mut self){
-        for n_countdown in (1..self.n+1).rev() {
+    pub fn tension_loop(&mut self) {
+        for n_countdown in (1..self.n + 1).rev() {
             self.tension_grid(&n_countdown);
         }
     }
 
-    fn tension_grid(&mut self, n_countdown:&usize) {
+    fn tension_grid(&mut self, n_countdown: &usize) {
         for (rowIndex, row) in self.k.row_iter().enumerate() {
             for (colIndex, col) in row.iter().enumerate() {
-                let k_to_use = std::cmp::max(col,n_countdown);
-
-
+                let k_to_use = std::cmp::min(col,n_countdown);
             }
         }
     }
 
-    fn tension_cell(rowIndex:&usize,colIndex:&usize,k_i_j_mod:&usize,p: &MatrixMN<f64, Dynamic, Dynamic>) {
-        
-    }
-
+    fn tension_cell(rowIndex: &usize, colIndex: &usize, k_i_j_mod: &usize, p: &MatrixMN<f64, Dynamic, Dynamic>) {}
 
     pub fn output_all_matrixes(&self) {
         println!("NB {} K{} Z{} DZ{} DP{} P{:.1}", self.nb, self.k, self.z, self.dz, self.dp, self.p);
     }
-
 
     pub fn init_distance_point_matrixes(&mut self) {
         //step 1: make a 2d search tree to accelerate the finding of points
@@ -289,13 +222,13 @@ impl ABOSGrid {
                 let y_distance = f64::round(f64::abs((closest_point[1] - position[1]) / self.dy)) as usize;
 
                 unsafe {
-                    let nbPosition = self.nb.get_unchecked_mut((rowIndex, colIndex));
-                    *nbPosition = closest_point_in_tree;
+                    let nb_position = self.nb.get_unchecked_mut((rowIndex, colIndex));
+                    *nb_position = closest_point_in_tree;
 
-                    let kPosition = self.k.get_unchecked_mut((rowIndex, colIndex));
-                    *kPosition = if x_distance > y_distance { x_distance } else { y_distance };
-                    if *kPosition > (self.k_max) {
-                        self.k_max = *kPosition
+                    let k_position = self.k.get_unchecked_mut((rowIndex, colIndex));
+                    *k_position = if x_distance > y_distance { x_distance } else { y_distance };
+                    if *k_position > (self.k_max) {
+                        self.k_max = *k_position
                     }
                 }
             }
@@ -303,6 +236,62 @@ impl ABOSGrid {
     }
 }
 
+
+pub fn compute_grid_dimensions(x1: f64, x2: f64, y1: f64, y2: f64, dmc: f64, filter: f64)
+                               -> (i32, i32, f64, f64) {
+    //step 1: Always assuming x side is greater
+
+    //step 2: grid size is defined as i0=round  x21/ Dmc 
+
+    let i0: i32 = f64::round((x2 - x1) / dmc) as i32;
+    //step 3 find your grid size for your larger dimension set as i1 = i0*k largest possible while less than Filter
+    let mut i1: i32 = 0;
+    let mut i = 0;
+    loop {
+        i += 1;
+        let potential_val: i32 = i0 * i;
+        if filter > potential_val as f64 {
+            i1 = potential_val;
+        } else {
+            break;
+        }
+    }
+    //step 5 find your grid size for your smaller dimension such that it is as close to that of il as possible
+    let j1: i32 = f64::round((y2 - y1) / (x2 - x1) * (i1 as f64 - 1.0)) as i32;
+
+    let dx = (x2 - x1) / i1 as f64;
+    let dy = (y2 - y1) / j1 as f64;
+
+    return (i1, j1, dx, dy);
+}
+
+fn compute_rl(degree: i8, k_max: usize) -> (usize, f64) {
+    return match degree {
+        0 => {
+            let r = 1;
+            let l = 0.7 / ((0.107 * k_max as f64 - 0.714) * k_max as f64);
+            (r, l)
+        }
+        1 => {
+            let r = 1;
+            let l = 1.0 / ((0.107 * k_max as f64 - 0.714) * k_max as f64);
+            (r, l)
+        }
+        2 => {
+            let r = 1;
+            let l = 1.0 / (0.0360625 * k_max as f64 + 0.192);
+            (r, l)
+        }
+        3 => {
+            let r = 0;
+            let l = 0.7 / ((0.107 * k_max as f64 - 0.714) * k_max as f64);
+            (r, l)
+        }
+        _ => {
+            (0, 0.0)
+        }
+    };
+}
 
 pub fn get_ranges(points: &MatrixMN<f64, Dynamic, U3>) -> (f64, f64, f64, f64, f64, f64) {
     let x1 = points.column(0).min();
