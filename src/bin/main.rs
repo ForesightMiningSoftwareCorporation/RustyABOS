@@ -27,7 +27,7 @@ fn main() {
     // 2. Per partes constant interpolation of values DZ into the matrix P
     test.per_parts_constant_interpolation();
     // 3. Tensioning and smoothing of the matrix P
-    test.tension_loop();
+    ABOSGrid::tension_loop(test.n, test.i1 as usize, test.j1 as usize, &mut test.p, & test.k);
     // 4. P+DP→P
     // 5. ( , )
     // i Xi Yi Z − f →DZi

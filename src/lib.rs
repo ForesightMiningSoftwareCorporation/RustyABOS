@@ -17,8 +17,8 @@ use na::{DMatrix, DVector, MatrixMN, Dynamic, RealField, U3, U1, Dim};
 //Make D matrix
 //unwrapping to 1d vector [x1, y1, z1, x2, y2, z2...]
 //real function call would just pass the vector into DMatrix
-fn initialize_dmatrix(points: Vec<Vec<f64>>) ->  MatrixMN<f64, Dynamic, U3> {
-    let mut vec = Vec::new(); 
+fn initialize_dmatrix(points: Vec<Vec<f64>>) -> MatrixMN<f64, Dynamic, U3> {
+    let mut vec = Vec::new();
     for point in points.iter() {
         for ii in point.iter() {
             vec.push(*ii);
@@ -29,17 +29,17 @@ fn initialize_dmatrix(points: Vec<Vec<f64>>) ->  MatrixMN<f64, Dynamic, U3> {
     let fix_dm = dm.transpose();
 
     //step 1: make an array with all the points
-    let  xyz_points: MatrixMN<f64, Dynamic, U3> = na::convert(fix_dm);
+    let xyz_points: MatrixMN<f64, Dynamic, U3> = na::convert(fix_dm);
     xyz_points
 }
 
-fn indexes_to_position_direct<N: RealField>(indxs : DVector<N>, d_mins : DVector<N>, d_sizes : DVector<N>) -> DVector<N> {
+fn indexes_to_position_direct<N: RealField>(indxs: DVector<N>, d_mins: DVector<N>, d_sizes: DVector<N>) -> DVector<N> {
     let position = d_mins + d_sizes * indxs;
     position
 }
 
-fn indexes_to_position(indxs : DVector<u32>, d_mins : DVector<f64>, d_sizes : DVector<f64>) -> DVector<f64> {
-    let indxsConverted : DVector<f64> = na::convert(indxs);
+fn indexes_to_position(indxs: DVector<u32>, d_mins: DVector<f64>, d_sizes: DVector<f64>) -> DVector<f64> {
+    let indxsConverted: DVector<f64> = na::convert(indxs);
     indexes_to_position_direct(indxsConverted, d_mins, d_sizes)
 }
 
@@ -101,7 +101,6 @@ fn get_min_cheyshev_distance_kd(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64 
         //     *pPosition = point_closest[2];
 
         // }
-        
 
 
         // for (colIndex, mut col) in row.iter().enumerate() {
@@ -138,7 +137,7 @@ pub struct ABOSGrid {
     r: usize,
     l: f64,
     filter: f64,
-    n: usize,
+    pub n: usize,
     //INPUT resolution parameter
     xyz_points: MatrixMN<f64, Dynamic, U3>,
     //INPUT all points XYZ
@@ -160,15 +159,15 @@ pub struct ABOSGrid {
     //ABOS Calculated Parameters
     dmc: f64,
     //minimal chebyshev distance
-    i1: i32,
+    pub i1: i32,
     //xsize of grid
-    j1: i32,
+    pub j1: i32,
     //ysize of grid
     dx: f64,
     //size of grid on x
     dy: f64,
     //size of grid on y
-    p: MatrixMN<f64, Dynamic, Dynamic>,
+    pub p: MatrixMN<f64, Dynamic, Dynamic>,
     //elements of the elevation matrix [i,j] size
     dp: MatrixMN<f64, Dynamic, Dynamic>,
     //auxiliary matrix same size as P
@@ -178,12 +177,13 @@ pub struct ABOSGrid {
     //vector if z coordinates XYZ
     dz: DVector<f64>,
     //auxiliary vector same size as Z
-    k: MatrixMN<usize, Dynamic, Dynamic>,
+    pub k: MatrixMN<usize, Dynamic, Dynamic>,
     // Grid distance of each grid to the point indexed in NB
     k_max: usize,
     //maximal element of matrix K
-    rs: f64, // Resolution of map
-    xy_swaped: bool, 
+    rs: f64,
+    // Resolution of map
+    xy_swaped: bool,
     //whether the xy points were swapped
 }
 
@@ -192,7 +192,7 @@ impl ABOSGrid {
     pub fn new(points: Vec<Vec<f64>>, filter: f64, degree: i8) -> ABOSGrid {
         //unwrapping to 1d vector [x1, y1, z1, x2, y2, z2...]
         //real function call would just pass the vector into DMatrix
-        let mut vec = Vec::new(); 
+        let mut vec = Vec::new();
         for point in points.iter() {
             for ii in point.iter() {
                 vec.push(*ii);
@@ -289,29 +289,48 @@ impl ABOSGrid {
     fn indexes_to_position(&self, row_index: &usize, col_index: &usize) -> [f64; 2] {
         let x_coordinate = self.x1 + self.dx * (*row_index as f64);
         let y_coordinate = self.y1 + self.dy * (*col_index as f64);
-    
+
         [x_coordinate, y_coordinate]
     }
 
-    pub fn tension_loop(&mut self) {
-        for n_countdown in (1..self.n + 1).rev() {
-            self.tension_grid(&n_countdown);
-        }
-    }
-
-    fn tension_grid(&mut self, n_countdown: &usize) {
-        for (rowIndex, row) in self.k.row_iter().enumerate() {
-            for (colIndex, col) in row.iter().enumerate() {
-                let k_to_use = std::cmp::min(col,n_countdown);
+    pub fn tension_loop( n: usize,i1:usize,j1:usize, mutable_p: &mut MatrixMN<f64, Dynamic, Dynamic>, k: &MatrixMN<usize, Dynamic, Dynamic>) {
+        for n_countdown in (1..n + 1).rev() {
+            for (rowIndex, row) in k.row_iter().enumerate() {
+                for (colIndex, col) in row.iter().enumerate() {
+                    let k_to_use = std::cmp::min(col, &n_countdown);
+                    let new_p = ABOSGrid::tension_cell(i1,j1, rowIndex, colIndex, *k_to_use, mutable_p);
+                    unsafe {
+                        *mutable_p.get_unchecked_mut((rowIndex, colIndex)) = new_p;
+                    }
+                }
             }
         }
     }
 
-    fn tension_cell(rowIndex: &usize, colIndex: &usize, k_i_j_mod: &usize, p: &MatrixMN<f64, Dynamic, Dynamic>) {}
+    fn tension_cell(i1: usize,j1: usize, rowIndex: usize, colIndex: usize, k_i_j_mod: usize, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
+        //we need to get Pi , j=Pik , jPi , jkPi−k , jPi , j−k
+        let min_i: usize = std::cmp::max((rowIndex as i32 - k_i_j_mod as i32), 0) as usize;
+        let min_j: usize = std::cmp::max((colIndex as i32 - k_i_j_mod as i32), 0) as usize;
+        let max_i: usize = std::cmp::min((rowIndex as i32 + k_i_j_mod as i32), (i1 as i32 - 1)) as usize;
+        let max_j: usize = std::cmp::min((colIndex as i32 + k_i_j_mod as i32), (j1 as i32 - 1)) as usize;
+
+
+
+        let mut p1: f64 = 0.0;
+        unsafe {
+            p1 += *p.get_unchecked((min_i, min_j));
+            p1 += *p.get_unchecked((max_i, max_j));
+            p1 += *p.get_unchecked((min_i, max_j));
+            p1 += *p.get_unchecked((max_i, min_j));
+            //
+            p1 = p1 / 4.0;
+        }
+        p1
+    }
 
     pub fn output_all_matrixes(&self) {
         println!("dmc {}", self.dmc);
-        println!("NB {} K{} Z{} DZ{} DP{} P{:.1}", self.nb, self.k, self.z, self.dz, self.dp, self.p);
+        println!("NB {:.1} K{:.1} Z{:.1} DZ{:.1} DP{:.1} P{:.1}", self.nb, self.k, self.z, self.dz, self.dp, self.p);
     }
 
     pub fn init_distance_point_matrixes(&mut self) {
@@ -416,7 +435,7 @@ pub fn get_ranges(points: &MatrixMN<f64, Dynamic, U3>) -> (f64, f64, f64, f64, f
     return (x1, x2, y1, y2, z1, z2);
 }
 
-pub fn swap_and_get_ranges(points: & mut MatrixMN<f64, Dynamic, U3>) -> (f64, f64, f64, f64, f64, f64, bool) {
+pub fn swap_and_get_ranges(points: &mut MatrixMN<f64, Dynamic, U3>) -> (f64, f64, f64, f64, f64, f64, bool) {
     let (x1, x2, y1, y2, z1, z2) = get_ranges(&points);
     return if f64::abs(x1 - x2) < f64::abs(y1 - y2) {
         points.swap_columns(0, 1);
@@ -430,7 +449,9 @@ pub fn swap_and_get_ranges(points: & mut MatrixMN<f64, Dynamic, U3>) -> (f64, f6
 #[cfg(test)]
 mod tests {
     use crate::{compute_grid_dimensions, ABOSGrid, swap_and_get_ranges, initialize_dmatrix, get_min_cheyshev_distance_kd};
+
     extern crate nalgebra as na;
+
     use na::{DMatrix, DVector, MatrixMN, Dynamic, U3, U1, Dim};
 // #[test]
 // fn it_works() {
@@ -460,12 +481,11 @@ mod tests {
     }
 
     #[test]
-    fn test_swap_and_get_ranges(){
-
+    fn test_swap_and_get_ranges() {
         let points_fix = na::Matrix3::new(1.0, 2.0, 3.0,
                                           2.0, 4.0, 6.0,
                                           3.0, 6.0, 9.0);
-        let  mut xyz_points: MatrixMN<f64, Dynamic, U3> = na::convert(points_fix);
+        let mut xyz_points: MatrixMN<f64, Dynamic, U3> = na::convert(points_fix);
         let (x1, x2, y1, y2, z1, z2, xy_swaped) = swap_and_get_ranges(&mut xyz_points);
 
         let check_points_fix = na::Matrix3::new(2.0, 1.0, 3.0,
@@ -484,12 +504,12 @@ mod tests {
         for ii in 0..3 {
             //making f64 then converting seemse better than casting f64 3 times
             let iif = 1.0 + ii as f64;
-            let new_point:Vec<f64> = vec!(iif , iif*2.0, iif*3.0);
+            let new_point: Vec<f64> = vec!(iif, iif * 2.0, iif * 3.0);
             //let new_point:Vec<f64> = vec!(ii , (ii*2) as f64, (ii*3) as f64);
             points.push(new_point);
         }
 
-        let  xyz_points: MatrixMN<f64, Dynamic, U3> = initialize_dmatrix(points);
+        let xyz_points: MatrixMN<f64, Dynamic, U3> = initialize_dmatrix(points);
 
         let check_xyz = na::Matrix3::new(1.0, 2.0, 3.0,
                                          2.0, 4.0, 6.0,
@@ -501,21 +521,17 @@ mod tests {
     }
 
     #[test]
-    fn test_min_chebyshev_dist(){
+    fn test_min_chebyshev_dist() {
         let check_xyz = na::Matrix3::new(1.0, 2.0, 3.0,
-            2.0, 4.0, 6.0,
-            3.0, 6.0, 9.0);
+                                         2.0, 4.0, 6.0,
+                                         3.0, 6.0, 9.0);
         let check_xyz: MatrixMN<f64, Dynamic, U3> = na::convert(check_xyz);
         //let min_cheby_dist = get_min_chebyshev_distance_n2(&check_xyz);
         let cheby_dist = get_min_cheyshev_distance_kd(&check_xyz);
         println!("min_cheby_dist {}", get_min_cheyshev_distance_kd(&check_xyz));
         assert_eq!(2.0, cheby_dist);
-
     }
-    
-
 }
-
 
 
 pub fn hello1() -> () {
