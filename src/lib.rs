@@ -4,7 +4,6 @@
 
 extern crate approx;
 extern crate nalgebra as na;
-//extern crate alga;
 
 pub const INFINITY: f64 = 1.0f64 / 0.0f64;
 
@@ -74,7 +73,16 @@ fn get_min_chebyshev_distance_n2(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64
     return min_chebyshev_distance;
 }
 
-fn get_min_cheyshev_distance_kd(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64 {
+fn init_kdtree_from_matrix(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> KdTree<f64, usize, [f64; 2]> {
+    let mut kdtree = KdTree::new(2);
+    // let mut points:Vec<([f64; 2], usize)> = vec![];
+    for (i, row) in xyz_points.row_iter().enumerate() {
+        kdtree.add([row[0], row[1]], i).unwrap();
+    }
+    kdtree
+}
+
+fn get_min_chebyshev_distance_kd(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64 {
     let mut min_chebyshev_distance: f64 = INFINITY;
 
     //step 1: make a 2d search tree to accelerate the finding of points
@@ -87,8 +95,8 @@ fn get_min_cheyshev_distance_kd(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64 
     //TODO impliment n nearest because kdtree includesitself therefore nearest point is self
     for row in xyz_points.row_iter() {
         let point = [row[0], row[1]];
-        let kd_search_result = kdtree.nearest(&point, 1, &squared_euclidean).unwrap();
-        let closest_indx = *kd_search_result[0].1;
+        let kd_search_result = kdtree.nearest(&point, 2, &squared_euclidean).unwrap();
+        let closest_indx = *kd_search_result[1].1;
         let distances: MatrixMN<f64, U1, U3> = row.clone_owned() - xyz_points.row(closest_indx);
         let distances = distances.abs();
         let max_xy_distance = if distances[0] > distances[1] { distances[0] } else { distances[1] };
@@ -99,7 +107,6 @@ fn get_min_cheyshev_distance_kd(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64 
         // unsafe {
         //     let distances = [point[0] - xyz_points[(closest_indx, 0)] ]
         //     *pPosition = point_closest[2];
-
         // }
 
 
@@ -211,7 +218,7 @@ impl ABOSGrid {
         let (x1, x2, y1, y2, z1, z2, xy_swaped) = swap_and_get_ranges(&mut xyz_points);
 
         //step 3: get Chebyshev distance
-        let dmc = get_min_chebyshev_distance_n2(&xyz_points);
+        let dmc = get_min_chebyshev_distance_kd(&xyz_points);
         //step 3: get the grid dimensions
         let (i1, j1, dx, dy) = compute_grid_dimensions(x1, x2, y1, y2, dmc, filter);
 
@@ -448,11 +455,14 @@ pub fn swap_and_get_ranges(points: &mut MatrixMN<f64, Dynamic, U3>) -> (f64, f64
 
 #[cfg(test)]
 mod tests {
-    use crate::{compute_grid_dimensions, ABOSGrid, swap_and_get_ranges, initialize_dmatrix, get_min_cheyshev_distance_kd};
+    use crate::{compute_grid_dimensions, ABOSGrid, swap_and_get_ranges, initialize_dmatrix, 
+                get_min_chebyshev_distance_kd, get_min_chebyshev_distance_n2};
 
     extern crate nalgebra as na;
 
     use na::{DMatrix, DVector, MatrixMN, Dynamic, U3, U1, Dim};
+    extern crate rand;
+    use rand::prelude::*;
 // #[test]
 // fn it_works() {
 //     assert_eq!(2 + 2, 4);
@@ -522,13 +532,26 @@ mod tests {
 
     #[test]
     fn test_min_chebyshev_dist() {
+        //// -------- Testing Veracity of kd  --------------
+        // for _ in 0..500 {
+        //     let mut points: Vec<Vec<f64>> = vec![];
+        //     let mut rng = rand::thread_rng();
+        //     for _ in 0..500 {
+        //         let new_point:Vec<f64> = vec!(rng.gen_range(200.0,300.0),rng.gen_range(100.0,200.0),rng.gen_range(0.0,10.0));
+        //         points.push(new_point);
+        //     }
+        //     let xyz_points: MatrixMN<f64, Dynamic, U3> = initialize_dmatrix(points);
+        //     assert_eq!(
+        //         get_min_chebyshev_distance_n2(&xyz_points),
+        //         get_min_chebyshev_distance_kd(&xyz_points)
+        //     );
+        // }
+
         let check_xyz = na::Matrix3::new(1.0, 2.0, 3.0,
                                          2.0, 4.0, 6.0,
                                          3.0, 6.0, 9.0);
         let check_xyz: MatrixMN<f64, Dynamic, U3> = na::convert(check_xyz);
-        //let min_cheby_dist = get_min_chebyshev_distance_n2(&check_xyz);
-        let cheby_dist = get_min_cheyshev_distance_kd(&check_xyz);
-        println!("min_cheby_dist {}", get_min_cheyshev_distance_kd(&check_xyz));
+        let cheby_dist = get_min_chebyshev_distance_kd(&check_xyz);
         assert_eq!(2.0, cheby_dist);
     }
 }
