@@ -73,7 +73,7 @@ fn get_min_chebyshev_distance_n2(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64
     return min_chebyshev_distance;
 }
 
-fn init_kdtree_from_matrix(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> KdTree<f64, usize, [f64; 2]> {
+fn initialize_kdtree_from_matrix(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> KdTree<f64, usize, [f64; 2]> {
     let mut kdtree = KdTree::new(2);
     // let mut points:Vec<([f64; 2], usize)> = vec![];
     for (i, row) in xyz_points.row_iter().enumerate() {
@@ -82,6 +82,7 @@ fn init_kdtree_from_matrix(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> KdTree<f6
     kdtree
 }
 
+//TODO ensure good to remove
 fn get_min_chebyshev_distance_kd(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64 {
     let mut min_chebyshev_distance: f64 = INFINITY;
 
@@ -104,39 +105,29 @@ fn get_min_chebyshev_distance_kd(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64
         if max_xy_distance < min_chebyshev_distance {
             min_chebyshev_distance = max_xy_distance;
         }
-        // unsafe {
-        //     let distances = [point[0] - xyz_points[(closest_indx, 0)] ]
-        //     *pPosition = point_closest[2];
-        // }
-
-
-        // for (colIndex, mut col) in row.iter().enumerate() {
-        //     // let position = self.indexes_to_position(&rowIndex, &colIndex);
-        //     // let kd_search_result = kdtree.nearest(&position, 1, &squared_euclidean).unwrap();
-        //     // let closest_point_in_tree_indx = *kd_search_result[0].1;
-        //     // let closest_point = self.xyz_points.row(closest_point_in_tree_indx);
-        //     // let x_distance = f64::round(f64::abs((closest_point[0] - position[0]) / self.dx));
-        //     // let y_distance = f64::round(f64::abs((closest_point[1] - position[1]) / self.dy));
-        // }
     }
+    return min_chebyshev_distance;
+}
 
-    let xyz_iter1 = xyz_points.row_iter();
-    for (_, row) in xyz_iter1.enumerate() {
-        let xyz_iter2 = xyz_points.row_iter();
-        for (_, row2) in xyz_iter2.enumerate() {
-            if row != row2 {
-                let distances: MatrixMN<f64, U1, U3> = row.clone_owned() - row2;
-                let distances = distances.abs();
-                let max_local_distance = if distances[0] > distances[1] { distances[0] } else { distances[1] };
+fn get_min_chebyshev_distance_kdi(xyz_points: &MatrixMN<f64, Dynamic, U3>, kdtree : &KdTree<f64, usize, [f64; 2]>) -> f64 {
+    let mut min_chebyshev_distance: f64 = INFINITY;
 
-                if max_local_distance < min_chebyshev_distance {
-                    min_chebyshev_distance = max_local_distance;
-                }
-            }
+    //TODO impliment n nearest because kdtree includesitself therefore nearest point is self
+    for row in xyz_points.row_iter() {
+        let point = [row[0], row[1]];
+        let kd_search_result = kdtree.nearest(&point, 2, &squared_euclidean).unwrap();
+        let closest_indx = *kd_search_result[1].1;
+        let distances: MatrixMN<f64, U1, U3> = row.clone_owned() - xyz_points.row(closest_indx);
+        let distances = distances.abs();
+        let max_xy_distance = if distances[0] > distances[1] { distances[0] } else { distances[1] };
+
+        if max_xy_distance < min_chebyshev_distance {
+            min_chebyshev_distance = max_xy_distance;
         }
     }
     return min_chebyshev_distance;
 }
+
 
 pub struct ABOSGrid {
     //User Inputs
@@ -210,15 +201,14 @@ impl ABOSGrid {
         let fix_dm = dm.transpose();
 
         //step 1: make an array with all the points
-        let mut xyz_points: MatrixMN<f64, Dynamic, U3> = na::convert(fix_dm);
-
         let mut xyz_points: MatrixMN<f64, Dynamic, U3> = initialize_dmatrix(points);
 
         //step 2: get Point range information and swap as necessary
         let (x1, x2, y1, y2, z1, z2, xy_swaped) = swap_and_get_ranges(&mut xyz_points);
 
+        let kdtree = initialize_kdtree_from_matrix(&xyz_points);
         //step 3: get Chebyshev distance
-        let dmc = get_min_chebyshev_distance_kd(&xyz_points);
+        let dmc = get_min_chebyshev_distance_kdi(&xyz_points, &kdtree);
         //step 3: get the grid dimensions
         let (i1, j1, dx, dy) = compute_grid_dimensions(x1, x2, y1, y2, dmc, filter);
 
@@ -239,7 +229,7 @@ impl ABOSGrid {
         // step 5: compute R and L
         let (r, l) = compute_rl(degree, k_max);
         let n = std::cmp::max(4, k_max / 2 + 2);
-        ABOSGrid {
+        let mut abosGrid = ABOSGrid {
             degree,
             r,
             l,
@@ -266,16 +256,18 @@ impl ABOSGrid {
             k_max,  //maximal element of matrix k
             rs, // Resolution of map
             xy_swaped,
-        }
+        };
+        abosGrid.init_distance_point_matrixes_kdi(&kdtree);
+        abosGrid
     }
 
     pub fn per_parts_constant_interpolation(&mut self) {
-        for (rowIndex, row) in self.nb.row_iter().enumerate() {
-            for (colIndex, col) in row.iter().enumerate() {
+        for (ii, row) in self.nb.row_iter().enumerate() {
+            for (jj, col) in row.iter().enumerate() {
                 let point_closest = self.xyz_points.row(*col);
                 unsafe {
-                    let pPosition = self.p.get_unchecked_mut((rowIndex, colIndex));
-                    *pPosition = point_closest[2];
+                    let p_position = self.p.get_unchecked_mut((ii, jj));
+                    *p_position = point_closest[2];
                 }
             }
         }
@@ -303,8 +295,8 @@ impl ABOSGrid {
     pub fn linear_tensioning_loop(&self, n: usize, i1: usize, j1: usize, mutable_p: &mut MatrixMN<f64, Dynamic, Dynamic>, k: &MatrixMN<usize, Dynamic, Dynamic>) {
 
         for n_countdown in (1..n + 1).rev() {
-            for (rowIndex, row) in k.row_iter().enumerate() {
-                for (colIndex, col) in row.iter().enumerate() {
+            for row in k.row_iter(){
+                for col in row.iter() {
                     let k_to_use = std::cmp::min(col, &n_countdown);
                     let test = self.get_q_value(*k_to_use);
                 }
@@ -312,26 +304,27 @@ impl ABOSGrid {
         }
     }
 
+    //justpass it an ABOSGrid parameter... vs passing 5 parameters..., 
     pub fn tension_loop(n: usize, i1: usize, j1: usize, mutable_p: &mut MatrixMN<f64, Dynamic, Dynamic>, k: &MatrixMN<usize, Dynamic, Dynamic>) {
         for n_countdown in (1..n + 1).rev() {
-            for (rowIndex, row) in k.row_iter().enumerate() {
-                for (colIndex, col) in row.iter().enumerate() {
+            for (ii, row) in k.row_iter().enumerate() {
+                for (jj, col) in row.iter().enumerate() {
                     let k_to_use = std::cmp::min(col, &n_countdown);
-                    let new_p = ABOSGrid::tension_cell(i1 as i32-1, j1 as i32-1, rowIndex as i32, colIndex as i32, *k_to_use as i32, mutable_p);
+                    let new_p = ABOSGrid::tension_cell(i1 as i32-1, j1 as i32-1, ii as i32, jj as i32, *k_to_use as i32, mutable_p);
                     unsafe {
-                        *mutable_p.get_unchecked_mut((rowIndex, colIndex)) = new_p;
+                        *mutable_p.get_unchecked_mut((ii, jj)) = new_p;
                     }
                 }
             }
         }
     }
 
-    fn tension_cell(i_max_index: i32, j_max_index: i32, rowIndex: i32, colIndex: i32, k_i_j_mod: i32, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
+    fn tension_cell(i_max_index: i32, j_max_index: i32, ii: i32, jj: i32, k_i_j_mod: i32, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
         //we need to get Pi , j=Pik , jPi , jkPi−k , jPi , j−k
-        let min_i: i32 = rowIndex - k_i_j_mod;
-        let min_j: i32 = colIndex - k_i_j_mod;
-        let max_i: i32 = rowIndex + k_i_j_mod;
-        let max_j: i32 = colIndex + k_i_j_mod;
+        let min_i: i32 = ii - k_i_j_mod;
+        let min_j: i32 = jj - k_i_j_mod;
+        let max_i: i32 = ii + k_i_j_mod;
+        let max_j: i32 = jj + k_i_j_mod;
 
 
         let mut p1: f64 = 0.0;
@@ -364,6 +357,7 @@ impl ABOSGrid {
         println!("NB {:.1} K{:.1} Z{:.1} DZ{:.1} DP{:.1} P{:.1}", self.nb, self.k, self.z, self.dz, self.dp, self.p);
     }
 
+    //TODO check this is good to remove
     pub fn init_distance_point_matrixes(&mut self) {
         //step 1: make a 2d search tree to accelerate the finding of points
         let dimensions = 2;
@@ -373,9 +367,9 @@ impl ABOSGrid {
             kdtree.add([row[0], row[1]], i).unwrap();
         }
         //step 2: iterate through each grid cell position. Set index of point to NB, and grid distance to K
-        for (rowIndex, mut row) in self.dp.row_iter().enumerate() {
-            for (colIndex, mut col) in row.iter().enumerate() {
-                let position = self.indexes_to_position(&rowIndex, &colIndex);
+        for (ii, row) in self.dp.row_iter().enumerate() {
+            for (jj, _col) in row.iter().enumerate() {
+                let position = self.indexes_to_position(&ii, &jj);
                 let kd_search_result = kdtree.nearest(&position, 1, &squared_euclidean).unwrap();
                 let closest_point_in_tree_indx = *kd_search_result[0].1;
 
@@ -384,10 +378,36 @@ impl ABOSGrid {
                 let y_distance = f64::round(f64::abs((closest_point[1] - position[1]) / self.dy)) as usize;
 
                 unsafe {
-                    let nb_position = self.nb.get_unchecked_mut((rowIndex, colIndex));
+                    let nb_position = self.nb.get_unchecked_mut((ii, jj));
                     *nb_position = closest_point_in_tree_indx;
 
-                    let k_position = self.k.get_unchecked_mut((rowIndex, colIndex));
+                    let k_position = self.k.get_unchecked_mut((ii, jj));
+                    *k_position = if x_distance > y_distance { x_distance } else { y_distance };
+                    if *k_position > (self.k_max) {
+                        self.k_max = *k_position
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn init_distance_point_matrixes_kdi(&mut self, kdtree : &KdTree<f64, usize, [f64; 2]>) {
+        //iterate through each grid cell position. Set index of point to NB, and grid distance to K
+        for (ii, row) in self.dp.row_iter().enumerate() {
+            for (jj, _col) in row.iter().enumerate() {
+                let position = self.indexes_to_position(&ii, &jj);
+                let kd_search_result = kdtree.nearest(&position, 1, &squared_euclidean).unwrap();
+                let closest_point_in_tree_indx = *kd_search_result[0].1;
+
+                let closest_point = self.xyz_points.row(closest_point_in_tree_indx);
+                let x_distance = f64::round(f64::abs((closest_point[0] - position[0]) / self.dx)) as usize;
+                let y_distance = f64::round(f64::abs((closest_point[1] - position[1]) / self.dy)) as usize;
+
+                unsafe {
+                    let nb_position = self.nb.get_unchecked_mut((ii, jj));
+                    *nb_position = closest_point_in_tree_indx;
+
+                    let k_position = self.k.get_unchecked_mut((ii, jj));
                     *k_position = if x_distance > y_distance { x_distance } else { y_distance };
                     if *k_position > (self.k_max) {
                         self.k_max = *k_position
@@ -480,7 +500,7 @@ pub fn swap_and_get_ranges(points: &mut MatrixMN<f64, Dynamic, U3>) -> (f64, f64
 #[cfg(test)]
 mod tests {
     use crate::{compute_grid_dimensions, ABOSGrid, swap_and_get_ranges, initialize_dmatrix, 
-                get_min_chebyshev_distance_kd, get_min_chebyshev_distance_n2};
+                initialize_kdtree_from_matrix, get_min_chebyshev_distance_kdi, get_min_chebyshev_distance_n2};
 
     extern crate nalgebra as na;
 
@@ -556,7 +576,7 @@ mod tests {
 
     #[test]
     fn test_min_chebyshev_dist() {
-        //// -------- Testing Veracity of kd  --------------
+        // -------- Testing Veracity of kd  --------------
         // for _ in 0..500 {
         //     let mut points: Vec<Vec<f64>> = vec![];
         //     let mut rng = rand::thread_rng();
@@ -575,7 +595,8 @@ mod tests {
                                          2.0, 4.0, 6.0,
                                          3.0, 6.0, 9.0);
         let check_xyz: MatrixMN<f64, Dynamic, U3> = na::convert(check_xyz);
-        let cheby_dist = get_min_chebyshev_distance_kd(&check_xyz);
+        let kdtree = initialize_kdtree_from_matrix(&check_xyz);
+        let cheby_dist = get_min_chebyshev_distance_kdi(&check_xyz, &kdtree);
         assert_eq!(2.0, cheby_dist);
     }
 }
