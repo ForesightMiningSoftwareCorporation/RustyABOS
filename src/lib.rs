@@ -300,12 +300,24 @@ impl ABOSGrid {
         [x_coordinate, y_coordinate]
     }
 
-    pub fn tension_loop( n: usize,i1:usize,j1:usize, mutable_p: &mut MatrixMN<f64, Dynamic, Dynamic>, k: &MatrixMN<usize, Dynamic, Dynamic>) {
+    pub fn linear_tensioning_loop(&self, n: usize, i1: usize, j1: usize, mutable_p: &mut MatrixMN<f64, Dynamic, Dynamic>, k: &MatrixMN<usize, Dynamic, Dynamic>) {
+
         for n_countdown in (1..n + 1).rev() {
             for (rowIndex, row) in k.row_iter().enumerate() {
                 for (colIndex, col) in row.iter().enumerate() {
                     let k_to_use = std::cmp::min(col, &n_countdown);
-                    let new_p = ABOSGrid::tension_cell(i1,j1, rowIndex, colIndex, *k_to_use, mutable_p);
+                    let test = self.get_q_value(*k_to_use);
+                }
+            }
+        }
+    }
+
+    pub fn tension_loop(n: usize, i1: usize, j1: usize, mutable_p: &mut MatrixMN<f64, Dynamic, Dynamic>, k: &MatrixMN<usize, Dynamic, Dynamic>) {
+        for n_countdown in (1..n + 1).rev() {
+            for (rowIndex, row) in k.row_iter().enumerate() {
+                for (colIndex, col) in row.iter().enumerate() {
+                    let k_to_use = std::cmp::min(col, &n_countdown);
+                    let new_p = ABOSGrid::tension_cell(i1 as i32-1, j1 as i32-1, rowIndex as i32, colIndex as i32, *k_to_use as i32, mutable_p);
                     unsafe {
                         *mutable_p.get_unchecked_mut((rowIndex, colIndex)) = new_p;
                     }
@@ -314,23 +326,35 @@ impl ABOSGrid {
         }
     }
 
-    fn tension_cell(i1: usize,j1: usize, rowIndex: usize, colIndex: usize, k_i_j_mod: usize, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
+    fn tension_cell(i_max_index: i32, j_max_index: i32, rowIndex: i32, colIndex: i32, k_i_j_mod: i32, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
         //we need to get Pi , j=Pik , jPi , jkPi−k , jPi , j−k
-        let min_i: usize = std::cmp::max((rowIndex as i32 - k_i_j_mod as i32), 0) as usize;
-        let min_j: usize = std::cmp::max((colIndex as i32 - k_i_j_mod as i32), 0) as usize;
-        let max_i: usize = std::cmp::min((rowIndex as i32 + k_i_j_mod as i32), (i1 as i32 - 1)) as usize;
-        let max_j: usize = std::cmp::min((colIndex as i32 + k_i_j_mod as i32), (j1 as i32 - 1)) as usize;
-
+        let min_i: i32 = rowIndex - k_i_j_mod;
+        let min_j: i32 = colIndex - k_i_j_mod;
+        let max_i: i32 = rowIndex + k_i_j_mod;
+        let max_j: i32 = colIndex + k_i_j_mod;
 
 
         let mut p1: f64 = 0.0;
+        let mut p_counter = 0;
         unsafe {
-            p1 += *p.get_unchecked((min_i, min_j));
-            p1 += *p.get_unchecked((max_i, max_j));
-            p1 += *p.get_unchecked((min_i, max_j));
-            p1 += *p.get_unchecked((max_i, min_j));
-            //
-            p1 = p1 / 4.0;
+            if min_i >= 0 && min_j >= 0 {
+                p1 += *p.get_unchecked((min_i as usize, min_j as usize));
+                p_counter+=1;
+            }
+            if max_i < i_max_index && max_j < j_max_index {
+                p1 += *p.get_unchecked((max_i as usize, max_j as usize));
+                p_counter+=1;
+            }
+            if min_i >= 0 && max_j < j_max_index {
+                p1 += *p.get_unchecked((min_i as usize, max_j as usize));
+                p_counter+=1;
+            }
+            if max_i < i_max_index && min_j >= 0 {
+                p1 += *p.get_unchecked((max_i as usize, min_j as usize));
+                p_counter+=1;
+            }
+
+            p1 = p1 / p_counter as f64;
         }
         p1
     }
