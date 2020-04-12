@@ -2,13 +2,13 @@
 extern crate approx;
 extern crate nalgebra as na;
 
-pub const INFINITY: f64 = 1.0f64 / 0.0f64;
+const INFINITY: f64 = 1.0f64 / 0.0f64;
 use kdtree::KdTree;
 use kdtree::distance::squared_euclidean;
 use na::{DVector, MatrixMN, Dynamic, RealField, U3, U1};
 extern crate rand;
 use rand::prelude::*;
-use crate::{initialize_dmatrix, ABOSGrid};
+use crate::{initialize_dmatrix, ABOSGrid, tension_cell};
     
 
 pub fn get_min_chebyshev_distance_n2(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64 {
@@ -102,7 +102,7 @@ pub fn tension_loop_functional(n: usize, i1: usize, j1: usize, mutable_p: &mut M
         for (ii, row) in k.row_iter().enumerate() {
             for (jj, col) in row.iter().enumerate() {
                 let k_i_j_mod = std::cmp::min(col.0, n_countdown);
-                let new_p = ABOSGrid::tension_cell(i1 as i32-1, j1 as i32-1, ii as i32, jj as i32, k_i_j_mod as i32, mutable_p);
+                let new_p = tension_cell(ii as i32, jj as i32, k_i_j_mod as i32, mutable_p);
                 unsafe {
                     *mutable_p.get_unchecked_mut((ii, jj)) = new_p;
                 }
@@ -112,7 +112,7 @@ pub fn tension_loop_functional(n: usize, i1: usize, j1: usize, mutable_p: &mut M
 }
 
 #[test]
-fn test_tension_loop() {
+pub fn test_tension_loop() {
     let mut points: Vec<Vec<f64>> = vec![];
     let mut points2: Vec<Vec<f64>> = vec![];
     for ii in 0..3 {
@@ -131,8 +131,10 @@ fn test_tension_loop() {
     agrid1.per_parts_constant_interpolation();
     agrid2.per_parts_constant_interpolation();
     assert_eq!(agrid1.p, agrid2.p);
+    assert_eq!(agrid1.k_u_v, agrid2.k_u_v);
 
     tension_loop_functional(agrid1.n, agrid1.i1 as usize, agrid1.j1 as usize, &mut agrid1.p, & agrid1.k_u_v);
     ABOSGrid::tension_loop(&mut agrid2);        
     assert_eq!(agrid1.p, agrid2.p);
+    assert_eq!(agrid1.k_u_v, agrid2.k_u_v);
 }

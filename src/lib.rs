@@ -58,6 +58,73 @@ fn get_min_chebyshev_distance_kdi(xyz_points: &MatrixMN<f64, Dynamic, U3>, kdtre
     return min_chebyshev_distance;
 }
 
+fn get_scaled_u_v(u : f64, v : f64, n : f64) -> (f64, f64){
+    let (mut u_mod, mut v_mod) = (u, v);
+    let uv_magnitude = (u*u + v*v).sqrt();
+    if uv_magnitude > n {
+        let c = n / uv_magnitude;
+        u_mod = c * u;
+        v_mod = c * v;
+    };
+    (u_mod, v_mod)
+}
+
+//makes a weighted average of 4 corner cells, top right, top left, bot right, bot left
+fn linear_tension_cell(q : f64, ii : usize, jj : usize, u : usize, v :usize, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
+
+    let top_l = if ii + u >= p.nrows() as usize || jj + v >= p.ncols() { 
+        0.0
+    } else {unsafe { *p.get_unchecked_mut((ii + u, jj + v)) } };
+
+    let bot_r = if (ii as i32 - u as i32) < 0  || (jj as i32 - v as i32) < 0 { 
+        0.0
+    } else { unsafe {*p.get_unchecked_mut((ii - u, jj - v)) }};
+
+    let top_r = if (ii as i32 - u as i32) < 0 || jj + v >= p.ncols() { 
+        0.0
+    } else {unsafe { *p.get_unchecked_mut((ii - u, jj + v)) } };
+
+    let bot_l = if ii + u >= p.nrows() as usize  || (jj as i32 - v as i32) < 0 { 
+        0.0
+    } else { unsafe {*p.get_unchecked_mut((ii - u, jj - v)) }};
+    (q*(top_l * bot_r) + top_r + bot_l)/(2.0 * q + 2.0)
+}
+
+
+
+fn tension_cell(ii: i32, jj: i32, k_i_j_mod: i32, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
+    //we need to get Pi , j=Pik , jPi , jkPi−k , jPi , j−k
+    let min_i: i32 = ii - k_i_j_mod;
+    let min_j: i32 = jj - k_i_j_mod;
+    let max_i: i32 = ii + k_i_j_mod;
+    let max_j: i32 = jj + k_i_j_mod;
+
+
+    let mut p1: f64 = 0.0;
+    let mut p_counter = 0;
+    unsafe {
+        if min_i >= 0 && min_j >= 0 {
+            p1 += *p.get_unchecked((min_i as usize, min_j as usize));
+            p_counter+=1;
+        }
+        if (max_i as usize) < p.nrows() && (max_j as usize) < p.ncols() {
+            p1 += *p.get_unchecked((max_i as usize, max_j as usize));
+            p_counter+=1;
+        }
+        if min_i >= 0 && (max_j as usize) < p.ncols() {
+            p1 += *p.get_unchecked((min_i as usize, max_j as usize));
+            p_counter+=1;
+        }
+        if (max_i as usize) < p.nrows() && min_j >= 0 {
+            p1 += *p.get_unchecked((max_i as usize, min_j as usize));
+            p_counter+=1;
+        }
+
+        p1 = p1 / p_counter as f64;
+    }
+    p1
+}
+
 
 pub struct ABOSGrid {
     //User Inputs
@@ -203,6 +270,44 @@ impl ABOSGrid {
         }
     }
 
+    fn indexes_to_position(&self, row_index: &usize, col_index: &usize) -> [f64; 2] {
+        let x_coordinate = self.x1 + self.dx * (*row_index as f64);
+        let y_coordinate = self.y1 + self.dy * (*col_index as f64);
+
+        [x_coordinate, y_coordinate]
+    }
+
+
+    pub fn tension_loop(abos_grid: &mut ABOSGrid) {
+        for n_countdown in (1..abos_grid.n + 1).rev() {
+            for (ii, row) in abos_grid.k_u_v.row_iter().enumerate() {
+                for (jj, col) in row.iter().enumerate() {
+                    let k_i_j_mod = std::cmp::min(col.0, n_countdown);
+                    unsafe {
+                        *abos_grid.p.get_unchecked_mut((ii, jj)) = tension_cell(ii as i32, jj as i32, k_i_j_mod as i32, &mut abos_grid.p);
+                    }
+                }
+            }
+        }
+    }
+
+
+    pub fn linear_tension_loop(abos_grid: &mut ABOSGrid) {
+        for n_countdown in (1..abos_grid.n + 1).rev() {
+            for (ii, row) in abos_grid.k_u_v.row_iter().enumerate() {
+                for (jj, col) in row.iter().enumerate() {
+                    let k_i_j_mod = std::cmp::min(col.0, n_countdown);
+                    let q = abos_grid.get_q_value(k_i_j_mod);
+                    let(u_mod, v_mod) = get_scaled_u_v(col.1 as f64, col.2 as f64, abos_grid.n as f64);
+
+                    unsafe {
+                        *abos_grid.p.get_unchecked_mut((ii, jj)) = linear_tension_cell(q, u_mod as usize, v_mod as usize, ii, jj, &mut abos_grid.p);
+                    }
+                }
+            }
+        }
+    }
+    
     fn get_q_value(&self, k_i_j: usize) -> f64 {
         return match self.degree {
             3 => 1.0,
@@ -215,93 +320,6 @@ impl ABOSGrid {
         };
     }
 
-    fn indexes_to_position(&self, row_index: &usize, col_index: &usize) -> [f64; 2] {
-        let x_coordinate = self.x1 + self.dx * (*row_index as f64);
-        let y_coordinate = self.y1 + self.dy * (*col_index as f64);
-
-        [x_coordinate, y_coordinate]
-    }
-
-    fn position_to_index(&self, xx: f64, yy: f64) -> (usize, usize){
-        let ii = (xx - self.x1) / self.dx;
-        let jj = (yy - self.y1) / self.dy;
-        (ii as usize, jj as usize)
-    }
-
-    //
-    fn get_vector_to_nb(&self, ii :usize, jj :usize) -> (usize, usize){
-        let nb_indx = self.nb[(ii, jj)];
-        let (ni, nj) = self.position_to_index(self.xyz_points[(nb_indx, 0)], self.xyz_points[(nb_indx, 1)]);
-        let uu = ii - ni;
-        let vv = jj - nj;
-        (uu, vv)
-    }
-
-    pub fn linear_tensioning_loop(&self, n: usize, i1: usize, j1: usize, mutable_p: &mut MatrixMN<f64, Dynamic, Dynamic>, k: &MatrixMN<usize, Dynamic, Dynamic>) {
-
-        for n_countdown in (1..n + 1).rev() {
-            for (ii, row) in k.row_iter().enumerate() {
-                for (jj, col) in row.iter().enumerate() {
-                    let k_to_use = std::cmp::min(col, &n_countdown);
-                    let test = self.get_q_value(*k_to_use);
-                    let new_p = ABOSGrid::tension_cell(i1 as i32-1, j1 as i32-1, ii as i32, jj as i32, *k_to_use as i32, mutable_p);
-                }
-                // unsafe {
-                //     *mutable_p.get_unchecked_mut((ii, jj)) = new_p;
-                // }
-            }
-        }
-    }
-
-    //justpass it an ABOSGrid parameter... vs passing 5 parameters..., 
-    pub fn tension_loop(abos_grid: &mut ABOSGrid) {
-        for n_countdown in (1..abos_grid.n + 1).rev() {
-            for (ii, row) in abos_grid.k_u_v.row_iter().enumerate() {
-                for (jj, col) in row.iter().enumerate() {
-                    let k_i_j_mod = std::cmp::min(col.0, n_countdown);
-                    let new_p = ABOSGrid::tension_cell(abos_grid.i1 as i32-1, abos_grid.j1 as i32-1, ii as i32, jj as i32, 
-                                                        k_i_j_mod as i32, &mut abos_grid.p);
-                    unsafe {
-                        *abos_grid.p.get_unchecked_mut((ii, jj)) = new_p;
-                    }
-                }
-            }
-        }
-    }
-
-
-    fn tension_cell(i_max_index: i32, j_max_index: i32, ii: i32, jj: i32, k_i_j_mod: i32, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
-        //we need to get Pi , j=Pik , jPi , jkPi−k , jPi , j−k
-        let min_i: i32 = ii - k_i_j_mod;
-        let min_j: i32 = jj - k_i_j_mod;
-        let max_i: i32 = ii + k_i_j_mod;
-        let max_j: i32 = jj + k_i_j_mod;
-
-
-        let mut p1: f64 = 0.0;
-        let mut p_counter = 0;
-        unsafe {
-            if min_i >= 0 && min_j >= 0 {
-                p1 += *p.get_unchecked((min_i as usize, min_j as usize));
-                p_counter+=1;
-            }
-            if max_i < i_max_index && max_j < j_max_index {
-                p1 += *p.get_unchecked((max_i as usize, max_j as usize));
-                p_counter+=1;
-            }
-            if min_i >= 0 && max_j < j_max_index {
-                p1 += *p.get_unchecked((min_i as usize, max_j as usize));
-                p_counter+=1;
-            }
-            if max_i < i_max_index && min_j >= 0 {
-                p1 += *p.get_unchecked((max_i as usize, min_j as usize));
-                p_counter+=1;
-            }
-
-            p1 = p1 / p_counter as f64;
-        }
-        p1
-    }
 
     pub fn output_all_matrixes(&self) {
         println!("dmc {}", self.dmc);
@@ -350,11 +368,11 @@ impl ABOSGrid {
     // 7. P→DP, continue from step 2 again (= start the next iteration cycle)
     
     pub fn calculation_loop(&mut self){
-        let mut counter = 1;
-        while counter > 0 {
+        while self.n > 0 {
             self.per_parts_constant_interpolation();
             ABOSGrid::tension_loop(self);
-            counter -= 1;
+            ABOSGrid::linear_tension_loop(self);
+            self.n -= 1;
         }
     }
 
