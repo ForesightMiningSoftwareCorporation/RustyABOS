@@ -10,6 +10,8 @@ use kdtree::KdTree;
 use kdtree::distance::squared_euclidean;
 //use alga::general::{Real}; //generic index functions
 use na::{DMatrix, DVector, MatrixMN, Dynamic, RealField, U3, U1, Dim};
+use std::cmp::max;
+
 mod deprecated;
 
 //Make D matrix
@@ -40,7 +42,7 @@ fn initialize_kdtree_from_matrix(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> KdT
     kdtree
 }
 
-fn get_min_chebyshev_distance_kdi(xyz_points: &MatrixMN<f64, Dynamic, U3>, kdtree : &KdTree<f64, usize, [f64; 2]>) -> f64 {
+fn get_min_chebyshev_distance_kdi(xyz_points: &MatrixMN<f64, Dynamic, U3>, kdtree: &KdTree<f64, usize, [f64; 2]>) -> f64 {
     let mut min_chebyshev_distance: f64 = INFINITY;
 
     for row in xyz_points.row_iter() {
@@ -58,9 +60,9 @@ fn get_min_chebyshev_distance_kdi(xyz_points: &MatrixMN<f64, Dynamic, U3>, kdtre
     return min_chebyshev_distance;
 }
 
-fn get_scaled_u_v(u : f64, v : f64, n : f64) -> (f64, f64){
+fn get_scaled_u_v(u: f64, v: f64, n: f64) -> (f64, f64) {
     let (mut u_mod, mut v_mod) = (u, v);
-    let uv_magnitude = (u*u + v*v).sqrt();
+    let uv_magnitude = (u * u + v * v).sqrt();
     if uv_magnitude > n {
         let c = n / uv_magnitude;
         u_mod = c * u;
@@ -70,29 +72,45 @@ fn get_scaled_u_v(u : f64, v : f64, n : f64) -> (f64, f64){
 }
 
 //makes a weighted average of 4 corner cells, top right, top left, bot right, bot left
-fn linear_tension_cell(q : f64, ii : usize, jj : usize, u : usize, v :usize, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
-    //println!("q {} u  {} v {}", q, u, v);
-    let top_l = if ii + u >= p.nrows() as usize || jj + v >= p.ncols() { 
+fn linear_tension_cell(q: f64, ii: usize, jj: usize, u: usize, v: usize, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
+    // println!("q {} u  {} v {}", q, u, v);
+    let top_l = if (ii + u) >= p.nrows() as usize || (jj + v) >= p.ncols() {
         0.0
-    } else {unsafe { *p.get_unchecked_mut((ii + u, jj + v)) } };
+    } else {
+        unsafe {
+            *p.get_unchecked((ii + u, jj + v))
+        }
+    };
 
-    let bot_r = if (ii as i32 - u as i32) < 0  || (jj as i32 - v as i32) < 0 { 
+    let bot_r = if (ii as i32 - u as i32) < 0 || (jj as i32 - v as i32) < 0 {
         0.0
-    } else { unsafe {*p.get_unchecked_mut((ii - u, jj - v)) }};
+    } else {
+        unsafe {
+            *p.get_unchecked((ii - u, jj - v))
+        }
+    };
 
-    let top_r = if (ii as i32 - u as i32) < 0 || jj + v >= p.ncols() { 
+    let top_r = if (ii as i32 - u as i32) < 0 || jj + v >= p.ncols() {
         0.0
-    } else {unsafe { *p.get_unchecked_mut((ii - u, jj + v)) } };
+    } else {
+        unsafe {
+            *p.get_unchecked((ii - u, jj + v))
+        }
+    };
 
-    let bot_l = if ii + u >= p.nrows() as usize  || (jj as i32 - v as i32) < 0 { 
+    let bot_l = if ii + u >= p.nrows() as usize || (jj as i32 - v as i32) < 0 {
         0.0
-    } else { unsafe {*p.get_unchecked_mut((ii + u, jj - v)) }};
-    //println!("top_l {} bot_r {} top_r {} bot_l {}", top_l, bot_r, top_r, bot_l);
-    let lin_ten = (q*(top_l * bot_r) + top_r + bot_l)/(2.0 * q + 2.0);
-    //println!("lin_ten {} ", lin_ten);
+    } else {
+        unsafe {
+            *p.get_unchecked((ii + u, jj - v))
+        }
+    };
+
+    let lin_ten = (q * top_l + q* bot_r + top_r + bot_l) / (2.0 * q + 2.0);
+    //
+
     lin_ten
 }
-
 
 
 fn tension_cell(ii: i32, jj: i32, k_i_j_mod: i32, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
@@ -102,28 +120,30 @@ fn tension_cell(ii: i32, jj: i32, k_i_j_mod: i32, p: &mut MatrixMN<f64, Dynamic,
     let max_i: i32 = ii + k_i_j_mod;
     let max_j: i32 = jj + k_i_j_mod;
 
-
     let mut p1: f64 = 0.0;
     let mut p_counter = 0;
     unsafe {
         if min_i >= 0 && min_j >= 0 {
             p1 += *p.get_unchecked((min_i as usize, min_j as usize));
-            p_counter+=1;
+            p_counter += 1;
         }
-        if (max_i as usize) < p.nrows() && (max_j as usize) < p.ncols() {
+        if max_i < p.nrows() as i32 && (max_j as usize) < p.ncols() {
             p1 += *p.get_unchecked((max_i as usize, max_j as usize));
-            p_counter+=1;
+            p_counter += 1;
         }
-        if min_i >= 0 && (max_j as usize) < p.ncols() {
+        if min_i >= 0 && max_j < p.ncols() as i32 {
             p1 += *p.get_unchecked((min_i as usize, max_j as usize));
-            p_counter+=1;
+            p_counter += 1;
         }
-        if (max_i as usize) < p.nrows() && min_j >= 0 {
+        if max_i < p.nrows() as i32 && min_j >= 0 {
             p1 += *p.get_unchecked((max_i as usize, min_j as usize));
-            p_counter+=1;
+            p_counter += 1;
         }
-
-        p1 = p1 / p_counter as f64;
+        if p_counter == 0 {
+            p1 = -INFINITY;
+        } else {
+            p1 = p1 / (p_counter as f64);
+        }
     }
     p1
 }
@@ -135,7 +155,6 @@ pub struct ABOSGrid {
     r: usize,
     l: f64,
     filter: f64,
-    pub n: usize,
     //INPUT resolution parameter
     xyz_points: MatrixMN<f64, Dynamic, U3>,
     //INPUT all points XYZ
@@ -175,7 +194,8 @@ pub struct ABOSGrid {
     //vector if z coordinates XYZ
     dz: DVector<f64>,
     //auxiliary vector same size as Z
-    pub k_u_v: MatrixMN<(usize, usize, usize), Dynamic, Dynamic>, //first one is max, second one is x dist, third one is y dist
+    pub k_u_v: MatrixMN<(usize, usize, usize), Dynamic, Dynamic>,
+    //first one is max, second one is x dist, third one is y dist
     // Grid distance of each grid to the point indexed in NB
     k_max: usize,
     //maximal element of matrix K
@@ -216,7 +236,7 @@ impl ABOSGrid {
         let p: MatrixMN<f64, Dynamic, Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), 0.0);
         let dp: MatrixMN<f64, Dynamic, Dynamic> = p.clone_owned();
         let nb: MatrixMN<usize, Dynamic, Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), 0);
-        let k_u_v: MatrixMN<(usize, usize, usize), Dynamic, Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), (0, 0 ,0));
+        let k_u_v: MatrixMN<(usize, usize, usize), Dynamic, Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), (0, 0, 0));
 
         // Pcontainer.matrix::
         let z: DVector<f64> = xyz_points.column(2).clone_owned();
@@ -230,12 +250,10 @@ impl ABOSGrid {
         let k_max = 0;
         let r = 0;
         let l = 0.0;
-        let n = 0;
         let mut abos_grid = ABOSGrid {
             degree,
             r,
             l,
-            n,
             filter, //INPUT resolution parameter
             xyz_points, //INPUT all points XYZ
             x1, //minx
@@ -265,8 +283,7 @@ impl ABOSGrid {
         let (r, l) = compute_rl(degree, abos_grid.k_max);
         abos_grid.r = r;
         abos_grid.l = l;
-        abos_grid.n = std::cmp::max(4, k_max / 2 + 2);
-        println!("k_max {} r {}, l {}, n {}",  abos_grid.k_max, r, l , n);
+        println!("k_max {} r {}, l {}", abos_grid.k_max, r, l);
         abos_grid
     }
 
@@ -289,38 +306,41 @@ impl ABOSGrid {
         [x_coordinate, y_coordinate]
     }
 
-
     pub fn tension_loop(abos_grid: &mut ABOSGrid) {
-        for n_countdown in (1..abos_grid.n + 1).rev() {
+        let n = max(4, abos_grid.k_max / 2 + 2);
+        for n_countdown in (1..n + 1).rev() {
             for (ii, row) in abos_grid.k_u_v.row_iter().enumerate() {
                 for (jj, col) in row.iter().enumerate() {
                     let k_i_j_mod = std::cmp::min(col.0, n_countdown);
+                    let new_p = tension_cell(ii as i32, jj as i32, k_i_j_mod as i32, &mut abos_grid.p);
                     unsafe {
-                        *abos_grid.p.get_unchecked_mut((ii, jj)) = tension_cell(ii as i32, jj as i32, k_i_j_mod as i32, &mut abos_grid.p);
+                        if new_p != -INFINITY {
+                            *abos_grid.p.get_unchecked_mut((ii, jj)) = new_p;
+                        }
                     }
                 }
             }
         }
     }
 
-
     pub fn linear_tension_loop(abos_grid: &mut ABOSGrid) {
-        for n_countdown in (1..abos_grid.n + 1).rev() {
+        let n = max(4, abos_grid.k_max / 2 + 2);
+        for n_countdown in (1..n + 1).rev() {
             for (ii, row) in abos_grid.k_u_v.row_iter().enumerate() {
                 for (jj, col) in row.iter().enumerate() {
                     let k_i_j_mod = std::cmp::min(col.0, n_countdown);
                     let q = abos_grid.get_q_value(k_i_j_mod);
                     //println!("q {}", q);
-                    let(u_mod, v_mod) = get_scaled_u_v(col.1 as f64, col.2 as f64, abos_grid.n as f64);
-
+                    let (u_mod, v_mod) = get_scaled_u_v(col.1 as f64, col.2 as f64, n as f64);
+                    let new_p = linear_tension_cell(q, ii, jj, u_mod as usize, v_mod as usize, &mut abos_grid.p);
                     unsafe {
-                        *abos_grid.p.get_unchecked_mut((ii, jj)) = linear_tension_cell(q, u_mod as usize, v_mod as usize, ii, jj, &mut abos_grid.p);
+                        *abos_grid.p.get_unchecked_mut((ii, jj)) = new_p;
                     }
                 }
             }
         }
     }
-    
+
     fn get_q_value(&self, k_i_j: usize) -> f64 {
         //println!("self.l {}, self.k_max {}", self.l, self.k_max);
         return match self.degree {
@@ -341,7 +361,7 @@ impl ABOSGrid {
     }
 
 
-    pub fn init_distance_point_matrixes_kdi(&mut self, kdtree : &KdTree<f64, usize, [f64; 2]>) {
+    pub fn init_distance_point_matrixes_kdi(&mut self, kdtree: &KdTree<f64, usize, [f64; 2]>) {
         //iterate through each grid cell position. Set index of point to NB, and grid distance to K
         for (ii, row) in self.dp.row_iter().enumerate() {
             for (jj, _col) in row.iter().enumerate() {
@@ -380,10 +400,9 @@ impl ABOSGrid {
     // 5. Z - f(X Y) →DZi
     // 6. If the maximal difference max { DZ, ,i=1,..., n } does not exceed defined precision, the algorithm is finished
     // 7. P→DP, continue from step 2 again (= start the next iteration cycle)
-    
-    pub fn calculation_loop(&mut self){
-        let mut numLoops = self.n;
-        //numLoops = 1;
+
+    pub fn calculation_loop(&mut self) {
+        let mut numLoops = 1;
         while numLoops > 0 {
             self.per_parts_constant_interpolation();
             ABOSGrid::tension_loop(self);
@@ -391,7 +410,6 @@ impl ABOSGrid {
             numLoops -= 1;
         }
     }
-
 } //end abos
 
 
@@ -477,15 +495,16 @@ pub fn swap_and_get_ranges(points: &mut MatrixMN<f64, Dynamic, U3>) -> (f64, f64
 
 #[cfg(test)]
 mod tests {
-    use crate::{ABOSGrid, swap_and_get_ranges, initialize_dmatrix, 
+    use crate::{ABOSGrid, swap_and_get_ranges, initialize_dmatrix,
                 initialize_kdtree_from_matrix, get_min_chebyshev_distance_kdi};
 
     extern crate nalgebra as na;
 
     use na::{MatrixMN, Dynamic, U3};
-    extern crate rand;
-    use rand::prelude::*;
 
+    extern crate rand;
+
+    use rand::prelude::*;
 
 
     #[test]
@@ -530,7 +549,6 @@ mod tests {
 
     #[test]
     fn test_min_chebyshev_dist() {
-
         let check_xyz = na::Matrix3::new(1.0, 2.0, 3.0,
                                          2.0, 4.0, 6.0,
                                          3.0, 6.0, 9.0);
