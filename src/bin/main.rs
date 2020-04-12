@@ -12,7 +12,7 @@ fn main() {
         points.push(new_point);
     }
     
-    let mut test = ABOSGrid::new(points,30.0, 0);
+    let mut test = ABOSGrid::new(points, 30.0, 0);
 
     test.per_parts_constant_interpolation();
     ABOSGrid::calculation_loop(&mut test);

@@ -71,7 +71,7 @@ fn get_scaled_u_v(u : f64, v : f64, n : f64) -> (f64, f64){
 
 //makes a weighted average of 4 corner cells, top right, top left, bot right, bot left
 fn linear_tension_cell(q : f64, ii : usize, jj : usize, u : usize, v :usize, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
-
+    //println!("q {} u  {} v {}", q, u, v);
     let top_l = if ii + u >= p.nrows() as usize || jj + v >= p.ncols() { 
         0.0
     } else {unsafe { *p.get_unchecked_mut((ii + u, jj + v)) } };
@@ -86,8 +86,11 @@ fn linear_tension_cell(q : f64, ii : usize, jj : usize, u : usize, v :usize, p: 
 
     let bot_l = if ii + u >= p.nrows() as usize  || (jj as i32 - v as i32) < 0 { 
         0.0
-    } else { unsafe {*p.get_unchecked_mut((ii - u, jj - v)) }};
-    (q*(top_l * bot_r) + top_r + bot_l)/(2.0 * q + 2.0)
+    } else { unsafe {*p.get_unchecked_mut((ii + u, jj - v)) }};
+    //println!("top_l {} bot_r {} top_r {} bot_l {}", top_l, bot_r, top_r, bot_l);
+    let lin_ten = (q*(top_l * bot_r) + top_r + bot_l)/(2.0 * q + 2.0);
+    //println!("lin_ten {} ", lin_ten);
+    lin_ten
 }
 
 
@@ -219,13 +222,15 @@ impl ABOSGrid {
         let z: DVector<f64> = xyz_points.column(2).clone_owned();
         let dz = z.clone_owned();
 
-        let k_max = 0;
         let res_x = (x2 - x1) / filter;
         let res_y = (y2 - y1) / filter;
         let rs = if res_x > res_y { res_x } else { res_y };
-        // step 5: compute R and L
-        let (r, l) = compute_rl(degree, k_max);
-        let n = std::cmp::max(4, k_max / 2 + 2);
+
+        // These items must be calculated with calculated k_max
+        let k_max = 0;
+        let r = 0;
+        let l = 0.0;
+        let n = 0;
         let mut abos_grid = ABOSGrid {
             degree,
             r,
@@ -254,7 +259,14 @@ impl ABOSGrid {
             rs, // Resolution of map
             xy_swaped,
         };
+        //Calculates k_u_v and kmax
         abos_grid.init_distance_point_matrixes_kdi(&kdtree);
+
+        let (r, l) = compute_rl(degree, abos_grid.k_max);
+        abos_grid.r = r;
+        abos_grid.l = l;
+        abos_grid.n = std::cmp::max(4, k_max / 2 + 2);
+        println!("k_max {} r {}, l {}, n {}",  abos_grid.k_max, r, l , n);
         abos_grid
     }
 
@@ -298,6 +310,7 @@ impl ABOSGrid {
                 for (jj, col) in row.iter().enumerate() {
                     let k_i_j_mod = std::cmp::min(col.0, n_countdown);
                     let q = abos_grid.get_q_value(k_i_j_mod);
+                    //println!("q {}", q);
                     let(u_mod, v_mod) = get_scaled_u_v(col.1 as f64, col.2 as f64, abos_grid.n as f64);
 
                     unsafe {
@@ -309,6 +322,7 @@ impl ABOSGrid {
     }
     
     fn get_q_value(&self, k_i_j: usize) -> f64 {
+        //println!("self.l {}, self.k_max {}", self.l, self.k_max);
         return match self.degree {
             3 => 1.0,
             2 => {
@@ -368,11 +382,13 @@ impl ABOSGrid {
     // 7. P→DP, continue from step 2 again (= start the next iteration cycle)
     
     pub fn calculation_loop(&mut self){
-        while self.n > 0 {
+        let mut numLoops = self.n;
+        //numLoops = 1;
+        while numLoops > 0 {
             self.per_parts_constant_interpolation();
             ABOSGrid::tension_loop(self);
             ABOSGrid::linear_tension_loop(self);
-            self.n -= 1;
+            numLoops -= 1;
         }
     }
 
@@ -409,6 +425,7 @@ pub fn compute_grid_dimensions(x1: f64, x2: f64, y1: f64, y2: f64, dmc: f64, fil
 }
 
 fn compute_rl(degree: i8, k_max: usize) -> (usize, f64) {
+    //println!();
     return match degree {
         0 => {
             let r = 1;
