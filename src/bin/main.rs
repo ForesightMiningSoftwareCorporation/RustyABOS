@@ -17,11 +17,12 @@ fn main() {
     //iteration cycle
     // 1. Filtering points XYZ, specification of the grid, computation of the matrices NB and
     // K, Z→DZ, 0→DP
-    //test.init_distance_point_matrixes(); //prepare nb/k/kmax //jmw is this done every loop? if not I've moved it to new function
+    //test.init_distance_point_matrixes(); //prepare nb/k/kmax
     // 2. Per partes constant interpolation of values DZ into the matrix P
     test.per_parts_constant_interpolation();
     // 3. Tensioning and smoothing of the matrix P
-    ABOSGrid::tension_loop(test.n, test.i1 as usize, test.j1 as usize, &mut test.p, & test.k);
+    //ABOSGrid::tension_loop(test.n, test.i1 as usize, test.j1 as usize, &mut test.p, & test.k_u_v);
+    ABOSGrid::tension_loop_new(&mut test);
     // 4. P+DP→P
     // 5. ( , )
     // i Xi Yi Z − f →DZi
