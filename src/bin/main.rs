@@ -1,4 +1,4 @@
-use abos::{ABOSGrid};
+use abos::{abos_run,ABOSInputs};
 extern crate rand;
 //use rand::prelude::*;
 
@@ -11,12 +11,18 @@ fn main() {
         //let new_point:Vec<f64> = vec!(ii , (ii*2) as f64, (ii*3) as f64);
         points.push(new_point);
     }
-    
-    let mut test = ABOSGrid::new(points, 30.0, 0);
 
-    test.per_parts_constant_interpolation();
-    ABOSGrid::calculation_loop(&mut test);
+    let inputs = ABOSInputs{
+        degree: 0,
+        filter: 0.0,
+        points: points
+    };
 
-    test.output_all_matrixes();
+    abos_run(&inputs);
+
+    // test.per_parts_constant_interpolation();
+    // ABOSGrid::calculation_loop(&mut test);
+    //
+    // test.output_all_matrixes();
 }
 
