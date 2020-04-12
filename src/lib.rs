@@ -105,7 +105,7 @@ pub struct ABOSGrid {
     //vector if z coordinates XYZ
     dz: DVector<f64>,
     //auxiliary vector same size as Z
-    pub k_u_v: MatrixMN<usize, Dynamic, Dynamic>, //first one is max, second one is x dist, third one is y dist
+    pub k_u_v: MatrixMN<(usize, usize, usize), Dynamic, Dynamic>, //first one is max, second one is x dist, third one is y dist
     // Grid distance of each grid to the point indexed in NB
     k_max: usize,
     //maximal element of matrix K
@@ -146,7 +146,7 @@ impl ABOSGrid {
         let p: MatrixMN<f64, Dynamic, Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), 0.0);
         let dp: MatrixMN<f64, Dynamic, Dynamic> = p.clone_owned();
         let nb: MatrixMN<usize, Dynamic, Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), 0);
-        let k_u_v: MatrixMN<usize, Dynamic, Dynamic> = nb.clone_owned();
+        let k_u_v: MatrixMN<(usize, usize, usize), Dynamic, Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), (0, 0 ,0));
 
         // Pcontainer.matrix::
         let z: DVector<f64> = xyz_points.column(2).clone_owned();
@@ -254,29 +254,13 @@ impl ABOSGrid {
     }
 
     //justpass it an ABOSGrid parameter... vs passing 5 parameters..., 
-    pub fn tension_loop(n: usize, i1: usize, j1: usize, mutable_p: &mut MatrixMN<f64, Dynamic, Dynamic>, 
-                        k: &MatrixMN<usize, Dynamic, Dynamic>) {
-        for n_countdown in (1..n + 1).rev() {
-            for (ii, row) in k.row_iter().enumerate() {
-                for (jj, col) in row.iter().enumerate() {
-                    let k_i_j_mod = std::cmp::min(col, &n_countdown);
-                    let new_p = ABOSGrid::tension_cell(i1 as i32-1, j1 as i32-1, ii as i32, jj as i32, *k_i_j_mod as i32, mutable_p);
-                    unsafe {
-                        *mutable_p.get_unchecked_mut((ii, jj)) = new_p;
-                    }
-                }
-            }
-        }
-    }
-
-    //justpass it an ABOSGrid parameter... vs passing 5 parameters..., 
-    pub fn tension_loop_new(abos_grid: &mut ABOSGrid) {
+    pub fn tension_loop(abos_grid: &mut ABOSGrid) {
         for n_countdown in (1..abos_grid.n + 1).rev() {
             for (ii, row) in abos_grid.k_u_v.row_iter().enumerate() {
                 for (jj, col) in row.iter().enumerate() {
-                    let k_i_j_mod = std::cmp::min(col, &n_countdown);
+                    let k_i_j_mod = std::cmp::min(col.0, n_countdown);
                     let new_p = ABOSGrid::tension_cell(abos_grid.i1 as i32-1, abos_grid.j1 as i32-1, ii as i32, jj as i32, 
-                                                        *k_i_j_mod as i32, &mut abos_grid.p);
+                                                        k_i_j_mod as i32, &mut abos_grid.p);
                     unsafe {
                         *abos_grid.p.get_unchecked_mut((ii, jj)) = new_p;
                     }
@@ -321,7 +305,7 @@ impl ABOSGrid {
 
     pub fn output_all_matrixes(&self) {
         println!("dmc {}", self.dmc);
-        println!("NB {:.1} Z{:.1} Z{:.1} DZ{:.1} DP{:.1} P{:.1}", self.nb, self.k_u_v, self.z, self.dz, self.dp, self.p);
+        println!("NB {:.1} Z{:.1} DZ{:.1} DP{:.1} P{:.1}", self.nb, self.z, self.dz, self.dp, self.p);
     }
 
 
@@ -342,23 +326,34 @@ impl ABOSGrid {
                     *nb_position = closest_point_in_tree_indx;
 
                     let k_position = self.k_u_v.get_unchecked_mut((ii, jj));
-                    *k_position = if x_distance > y_distance { x_distance } else { y_distance };
-                    //let max_cell_dist = if x_distance > y_distance { x_distance } else { y_distance };
-                    //*k_position = (max_cell_dist, x_distance, y_distance);
-                    if *k_position > (self.k_max) {
-                        self.k_max = *k_position;
+                    //*k_position = if x_distance > y_distance { x_distance } else { y_distance };
+                    let max_cell_dist = if x_distance > y_distance { x_distance } else { y_distance };
+                    *k_position = (max_cell_dist, x_distance, y_distance);
+                    if k_position.0 > (self.k_max) {
+                        self.k_max = k_position.0;
                     }
                 }
             }
         }
     }
 
+    //iteration cycle
+    // 1. Filtering points XYZ, specification of the grid, computation of the matrices NB and
+    // K, Z→DZ, 0→DP
+    //test.init_distance_point_matrixes(); //prepare nb/k/kmax
+    // 2. Per partes constant interpolation of values DZ into the matrix P
+    // 3. Tensioning and smoothing of the matrix P
+    //----3 sub steps Tensioning, Linear Tensioning, Smoothing
+    // 4. P+DP→P
+    // 5. Z - f(X Y) →DZi
+    // 6. If the maximal difference max { DZ, ,i=1,..., n } does not exceed defined precision, the algorithm is finished
+    // 7. P→DP, continue from step 2 again (= start the next iteration cycle)
+    
     pub fn calculation_loop(&mut self){
-        let mut counter = 10;
+        let mut counter = 1;
         while counter > 0 {
             self.per_parts_constant_interpolation();
-            ABOSGrid::tension_loop_new(self);
-
+            ABOSGrid::tension_loop(self);
             counter -= 1;
         }
     }
@@ -456,31 +451,7 @@ mod tests {
     extern crate rand;
     use rand::prelude::*;
 
-    #[test]
-    fn test_tension_loop_new() {
-        let mut points: Vec<Vec<f64>> = vec![];
-        let mut points2: Vec<Vec<f64>> = vec![];
-        for ii in 0..3 {
-            let iif = 1.0 + ii as f64;
-            let new_point:Vec<f64> = vec!(iif , iif*2.0, iif*3.0);
-            let new_point2:Vec<f64> = vec!(iif , iif*2.0, iif*3.0);
-            points.push(new_point);
-            points2.push(new_point2);
-        }
-        
-        let mut agrid1 = ABOSGrid::new(points, 30.0, 0);
-        let mut agrid2 = ABOSGrid::new(points2, 30.0, 0);
-        assert_eq!(agrid1.p, agrid2.p);
-        assert_eq!(agrid1.k_u_v, agrid2.k_u_v);
-        
-        agrid1.per_parts_constant_interpolation();
-        agrid2.per_parts_constant_interpolation();
-        assert_eq!(agrid1.p, agrid2.p);
 
-        ABOSGrid::tension_loop(agrid1.n, agrid1.i1 as usize, agrid1.j1 as usize, &mut agrid1.p, & agrid1.k_u_v);
-        ABOSGrid::tension_loop_new(&mut agrid2);        
-        assert_eq!(agrid1.p, agrid2.p);
-    }
 
     #[test]
     fn test_swap_and_get_ranges() {
@@ -534,13 +505,3 @@ mod tests {
         assert_eq!(2.0, cheby_dist);
     }
 }
-
-
-pub fn hello1() -> () {
-    println!("Hello1");
-}
-
-pub fn hello2() -> () {
-    println!("Hello2");
-}
-

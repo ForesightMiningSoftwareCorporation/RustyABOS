@@ -5,11 +5,11 @@ extern crate nalgebra as na;
 pub const INFINITY: f64 = 1.0f64 / 0.0f64;
 use kdtree::KdTree;
 use kdtree::distance::squared_euclidean;
-use na::{DMatrix, DVector, MatrixMN, Dynamic, RealField, U3, U1};
+use na::{DVector, MatrixMN, Dynamic, RealField, U3, U1};
 extern crate rand;
 use rand::prelude::*;
-use crate::{compute_grid_dimensions, ABOSGrid, swap_and_get_ranges, initialize_dmatrix, 
-    initialize_kdtree_from_matrix, get_min_chebyshev_distance_kdi};
+use crate::{initialize_dmatrix, ABOSGrid};
+    
 
 pub fn get_min_chebyshev_distance_n2(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64 {
     let mut min_chebyshev_distance: f64 = INFINITY;
@@ -66,11 +66,6 @@ fn get_min_chebyshev_distance_kd(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64
     return min_chebyshev_distance;
 }
 
-
-pub struct Deprecated {
-    dummy : bool,
-}
-
 pub fn indexes_to_position_direct<N: RealField>(indxs: DVector<N>, d_mins: DVector<N>, d_sizes: DVector<N>) -> DVector<N> {
     let position = d_mins + d_sizes * indxs;
     position
@@ -97,4 +92,47 @@ pub fn test_min_chebyshev_dist() {
             get_min_chebyshev_distance_kd(&xyz_points)
         );
     }
+}
+
+
+//justpass it an ABOSGrid parameter... vs passing 5 parameters..., 
+pub fn tension_loop_functional(n: usize, i1: usize, j1: usize, mutable_p: &mut MatrixMN<f64, Dynamic, Dynamic>, 
+    k: &MatrixMN<(usize, usize, usize), Dynamic, Dynamic>) {
+    for n_countdown in (1..n + 1).rev() {
+        for (ii, row) in k.row_iter().enumerate() {
+            for (jj, col) in row.iter().enumerate() {
+                let k_i_j_mod = std::cmp::min(col.0, n_countdown);
+                let new_p = ABOSGrid::tension_cell(i1 as i32-1, j1 as i32-1, ii as i32, jj as i32, k_i_j_mod as i32, mutable_p);
+                unsafe {
+                    *mutable_p.get_unchecked_mut((ii, jj)) = new_p;
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_tension_loop() {
+    let mut points: Vec<Vec<f64>> = vec![];
+    let mut points2: Vec<Vec<f64>> = vec![];
+    for ii in 0..3 {
+        let iif = 1.0 + ii as f64;
+        let new_point:Vec<f64> = vec!(iif , iif*2.0, iif*3.0);
+        let new_point2:Vec<f64> = vec!(iif , iif*2.0, iif*3.0);
+        points.push(new_point);
+        points2.push(new_point2);
+    }
+    
+    let mut agrid1 = ABOSGrid::new(points, 30.0, 0);
+    let mut agrid2 = ABOSGrid::new(points2, 30.0, 0);
+    assert_eq!(agrid1.p, agrid2.p);
+    assert_eq!(agrid1.k_u_v, agrid2.k_u_v);
+    
+    agrid1.per_parts_constant_interpolation();
+    agrid2.per_parts_constant_interpolation();
+    assert_eq!(agrid1.p, agrid2.p);
+
+    tension_loop_functional(agrid1.n, agrid1.i1 as usize, agrid1.j1 as usize, &mut agrid1.p, & agrid1.k_u_v);
+    ABOSGrid::tension_loop(&mut agrid2);        
+    assert_eq!(agrid1.p, agrid2.p);
 }
