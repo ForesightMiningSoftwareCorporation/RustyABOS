@@ -10,7 +10,6 @@ use kdtree::KdTree;
 use kdtree::distance::squared_euclidean;
 //use alga::general::{Real}; //generic index functions
 use na::{DMatrix, DVector, MatrixMN, Dynamic, RealField, U3, U1, Dim};
-mod deprecated;
 
 //Make D matrix
 //unwrapping to 1d vector [x1, y1, z1, x2, y2, z2...]
