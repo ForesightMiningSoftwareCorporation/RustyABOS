@@ -1,16 +1,17 @@
 ///Crate to generate a surface with the ABOS algorithm proposed in Art of Surface Interpolation byM gr. Miroslav Dressler, Ph.D.
 /// http://m.dressler.sweb.cz/ABOS.htm
 /// 
+
 extern crate approx;
 extern crate nalgebra as na;
 
 pub const INFINITY: f64 = 1.0f64 / 0.0f64;
 
 use kdtree::KdTree;
+use kdtree::ErrorKind;
 use kdtree::distance::squared_euclidean;
 //use alga::general::{Real}; //generic index functions
 use na::{DMatrix, DVector, MatrixMN, Dynamic, RealField, U3, U1, Dim};
-mod deprecated;
 
 //Make D matrix
 //unwrapping to 1d vector [x1, y1, z1, x2, y2, z2...]
@@ -31,6 +32,47 @@ fn initialize_dmatrix(points: Vec<Vec<f64>>) -> MatrixMN<f64, Dynamic, U3> {
     xyz_points
 }
 
+fn indexes_to_position_direct<N: RealField>(indxs: DVector<N>, d_mins: DVector<N>, d_sizes: DVector<N>) -> DVector<N> {
+    let position = d_mins + d_sizes * indxs;
+    position
+}
+
+fn indexes_to_position(indxs: DVector<u32>, d_mins: DVector<f64>, d_sizes: DVector<f64>) -> DVector<f64> {
+    let indxsConverted: DVector<f64> = na::convert(indxs);
+    indexes_to_position_direct(indxsConverted, d_mins, d_sizes)
+}
+
+
+//TODO convert from n2 to kd tree implimentation
+fn get_min_chebyshev_distance_n2(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64 {
+    let mut min_chebyshev_distance: f64 = INFINITY;
+
+    //step 1: make a 2d search tree to accelerate the finding of points
+    let dimensions = 2;
+    let mut kdtree = KdTree::new(dimensions);
+    // let mut points:Vec<([f64; 2], usize)> = vec![];
+    for (i, row) in xyz_points.row_iter().enumerate() {
+        kdtree.add([row[0], row[1]], i).unwrap();
+    }
+
+    let xyz_iter1 = xyz_points.row_iter();
+    for (_, row) in xyz_iter1.enumerate() {
+        let xyz_iter2 = xyz_points.row_iter();
+        for (_, row2) in xyz_iter2.enumerate() {
+            if row != row2 {
+                let distances: MatrixMN<f64, U1, U3> = row.clone_owned() - row2;
+                let distances = distances.abs();
+                let max_xy_distance = if distances[0] > distances[1] { distances[0] } else { distances[1] };
+
+                if max_xy_distance < min_chebyshev_distance {
+                    min_chebyshev_distance = max_xy_distance;
+                }
+            }
+        }
+    }
+    return min_chebyshev_distance;
+}
+
 fn initialize_kdtree_from_matrix(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> KdTree<f64, usize, [f64; 2]> {
     let mut kdtree = KdTree::new(2);
     // let mut points:Vec<([f64; 2], usize)> = vec![];
@@ -40,9 +82,37 @@ fn initialize_kdtree_from_matrix(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> KdT
     kdtree
 }
 
+//TODO ensure good to remove
+fn get_min_chebyshev_distance_kd(xyz_points: &MatrixMN<f64, Dynamic, U3>) -> f64 {
+    let mut min_chebyshev_distance: f64 = INFINITY;
+
+    //step 1: make a 2d search tree to accelerate the finding of points
+    let dimensions = 2;
+    let mut kdtree = KdTree::new(dimensions);
+    // let mut points:Vec<([f64; 2], usize)> = vec![];
+    for (i, row) in xyz_points.row_iter().enumerate() {
+        kdtree.add([row[0], row[1]], i).unwrap();
+    }
+    //TODO impliment n nearest because kdtree includesitself therefore nearest point is self
+    for row in xyz_points.row_iter() {
+        let point = [row[0], row[1]];
+        let kd_search_result = kdtree.nearest(&point, 2, &squared_euclidean).unwrap();
+        let closest_indx = *kd_search_result[1].1;
+        let distances: MatrixMN<f64, U1, U3> = row.clone_owned() - xyz_points.row(closest_indx);
+        let distances = distances.abs();
+        let max_xy_distance = if distances[0] > distances[1] { distances[0] } else { distances[1] };
+
+        if max_xy_distance < min_chebyshev_distance {
+            min_chebyshev_distance = max_xy_distance;
+        }
+    }
+    return min_chebyshev_distance;
+}
+
 fn get_min_chebyshev_distance_kdi(xyz_points: &MatrixMN<f64, Dynamic, U3>, kdtree : &KdTree<f64, usize, [f64; 2]>) -> f64 {
     let mut min_chebyshev_distance: f64 = INFINITY;
 
+    //TODO impliment n nearest because kdtree includesitself therefore nearest point is self
     for row in xyz_points.row_iter() {
         let point = [row[0], row[1]];
         let kd_search_result = kdtree.nearest(&point, 2, &squared_euclidean).unwrap();
@@ -105,7 +175,7 @@ pub struct ABOSGrid {
     //vector if z coordinates XYZ
     dz: DVector<f64>,
     //auxiliary vector same size as Z
-    pub k_u_v: MatrixMN<usize, Dynamic, Dynamic>, //first one is max, second one is x dist, third one is y dist
+    pub k: MatrixMN<usize, Dynamic, Dynamic>,
     // Grid distance of each grid to the point indexed in NB
     k_max: usize,
     //maximal element of matrix K
@@ -146,7 +216,7 @@ impl ABOSGrid {
         let p: MatrixMN<f64, Dynamic, Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), 0.0);
         let dp: MatrixMN<f64, Dynamic, Dynamic> = p.clone_owned();
         let nb: MatrixMN<usize, Dynamic, Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), 0);
-        let k_u_v: MatrixMN<usize, Dynamic, Dynamic> = nb.clone_owned();
+        let k: MatrixMN<usize, Dynamic, Dynamic> = nb.clone_owned();
 
         // Pcontainer.matrix::
         let z: DVector<f64> = xyz_points.column(2).clone_owned();
@@ -159,7 +229,7 @@ impl ABOSGrid {
         // step 5: compute R and L
         let (r, l) = compute_rl(degree, k_max);
         let n = std::cmp::max(4, k_max / 2 + 2);
-        let mut abos_grid = ABOSGrid {
+        let mut abosGrid = ABOSGrid {
             degree,
             r,
             l,
@@ -182,13 +252,13 @@ impl ABOSGrid {
             z, //vector if z coordinates XYZ
             dz, //auxiliary vector same size as z
             nb, // Matrix of nearest points on grid. Containing indexes to nearest point in the XYZ array
-            k_u_v, // Grid distance of each grid to the point indexed in nb
+            k, // Grid distance of each grid to the point indexed in nb
             k_max,  //maximal element of matrix k
             rs, // Resolution of map
             xy_swaped,
         };
-        abos_grid.init_distance_point_matrixes_kdi(&kdtree);
-        abos_grid
+        abosGrid.init_distance_point_matrixes_kdi(&kdtree);
+        abosGrid
     }
 
     pub fn per_parts_constant_interpolation(&mut self) {
@@ -222,45 +292,25 @@ impl ABOSGrid {
         [x_coordinate, y_coordinate]
     }
 
-    fn position_to_index(&self, xx: f64, yy: f64) -> (usize, usize){
-        let ii = (xx - self.x1) / self.dx;
-        let jj = (yy - self.y1) / self.dy;
-        (ii as usize, jj as usize)
-    }
-
-    //
-    fn get_vector_to_nb(&self, ii :usize, jj :usize) -> (usize, usize){
-        let nb_indx = self.nb[(ii, jj)];
-        let (ni, nj) = self.position_to_index(self.xyz_points[(nb_indx, 0)], self.xyz_points[(nb_indx, 1)]);
-        let uu = ii - ni;
-        let vv = jj - nj;
-        (uu, vv)
-    }
-
     pub fn linear_tensioning_loop(&self, n: usize, i1: usize, j1: usize, mutable_p: &mut MatrixMN<f64, Dynamic, Dynamic>, k: &MatrixMN<usize, Dynamic, Dynamic>) {
 
         for n_countdown in (1..n + 1).rev() {
-            for (ii, row) in k.row_iter().enumerate() {
-                for (jj, col) in row.iter().enumerate() {
+            for row in k.row_iter(){
+                for col in row.iter() {
                     let k_to_use = std::cmp::min(col, &n_countdown);
                     let test = self.get_q_value(*k_to_use);
-                    let new_p = ABOSGrid::tension_cell(i1 as i32-1, j1 as i32-1, ii as i32, jj as i32, *k_to_use as i32, mutable_p);
                 }
-                // unsafe {
-                //     *mutable_p.get_unchecked_mut((ii, jj)) = new_p;
-                // }
             }
         }
     }
 
     //justpass it an ABOSGrid parameter... vs passing 5 parameters..., 
-    pub fn tension_loop(n: usize, i1: usize, j1: usize, mutable_p: &mut MatrixMN<f64, Dynamic, Dynamic>, 
-                        k: &MatrixMN<usize, Dynamic, Dynamic>) {
+    pub fn tension_loop(n: usize, i1: usize, j1: usize, mutable_p: &mut MatrixMN<f64, Dynamic, Dynamic>, k: &MatrixMN<usize, Dynamic, Dynamic>) {
         for n_countdown in (1..n + 1).rev() {
             for (ii, row) in k.row_iter().enumerate() {
                 for (jj, col) in row.iter().enumerate() {
-                    let k_i_j_mod = std::cmp::min(col, &n_countdown);
-                    let new_p = ABOSGrid::tension_cell(i1 as i32-1, j1 as i32-1, ii as i32, jj as i32, *k_i_j_mod as i32, mutable_p);
+                    let k_to_use = std::cmp::min(col, &n_countdown);
+                    let new_p = ABOSGrid::tension_cell(i1 as i32-1, j1 as i32-1, ii as i32, jj as i32, *k_to_use as i32, mutable_p);
                     unsafe {
                         *mutable_p.get_unchecked_mut((ii, jj)) = new_p;
                     }
@@ -268,23 +318,6 @@ impl ABOSGrid {
             }
         }
     }
-
-    //justpass it an ABOSGrid parameter... vs passing 5 parameters..., 
-    pub fn tension_loop_new(abos_grid: &mut ABOSGrid) {
-        for n_countdown in (1..abos_grid.n + 1).rev() {
-            for (ii, row) in abos_grid.k_u_v.row_iter().enumerate() {
-                for (jj, col) in row.iter().enumerate() {
-                    let k_i_j_mod = std::cmp::min(col, &n_countdown);
-                    let new_p = ABOSGrid::tension_cell(abos_grid.i1 as i32-1, abos_grid.j1 as i32-1, ii as i32, jj as i32, 
-                                                        *k_i_j_mod as i32, &mut abos_grid.p);
-                    unsafe {
-                        *abos_grid.p.get_unchecked_mut((ii, jj)) = new_p;
-                    }
-                }
-            }
-        }
-    }
-
 
     fn tension_cell(i_max_index: i32, j_max_index: i32, ii: i32, jj: i32, k_i_j_mod: i32, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
         //we need to get Pi , j=Pik , jPi , jkPi−k , jPi , j−k
@@ -321,9 +354,42 @@ impl ABOSGrid {
 
     pub fn output_all_matrixes(&self) {
         println!("dmc {}", self.dmc);
-        println!("NB {:.1} Z{:.1} Z{:.1} DZ{:.1} DP{:.1} P{:.1}", self.nb, self.k_u_v, self.z, self.dz, self.dp, self.p);
+        println!("NB {:.1} K{:.1} Z{:.1} DZ{:.1} DP{:.1} P{:.1}", self.nb, self.k, self.z, self.dz, self.dp, self.p);
     }
 
+    //TODO check this is good to remove
+    pub fn init_distance_point_matrixes(&mut self) {
+        //step 1: make a 2d search tree to accelerate the finding of points
+        let dimensions = 2;
+        let mut kdtree = KdTree::new(dimensions);
+        // let mut points:Vec<([f64; 2], usize)> = vec![];
+        for (i, row) in self.xyz_points.row_iter().enumerate() {
+            kdtree.add([row[0], row[1]], i).unwrap();
+        }
+        //step 2: iterate through each grid cell position. Set index of point to NB, and grid distance to K
+        for (ii, row) in self.dp.row_iter().enumerate() {
+            for (jj, _col) in row.iter().enumerate() {
+                let position = self.indexes_to_position(&ii, &jj);
+                let kd_search_result = kdtree.nearest(&position, 1, &squared_euclidean).unwrap();
+                let closest_point_in_tree_indx = *kd_search_result[0].1;
+
+                let closest_point = self.xyz_points.row(closest_point_in_tree_indx);
+                let x_distance = f64::round(f64::abs((closest_point[0] - position[0]) / self.dx)) as usize;
+                let y_distance = f64::round(f64::abs((closest_point[1] - position[1]) / self.dy)) as usize;
+
+                unsafe {
+                    let nb_position = self.nb.get_unchecked_mut((ii, jj));
+                    *nb_position = closest_point_in_tree_indx;
+
+                    let k_position = self.k.get_unchecked_mut((ii, jj));
+                    *k_position = if x_distance > y_distance { x_distance } else { y_distance };
+                    if *k_position > (self.k_max) {
+                        self.k_max = *k_position
+                    }
+                }
+            }
+        }
+    }
 
     pub fn init_distance_point_matrixes_kdi(&mut self, kdtree : &KdTree<f64, usize, [f64; 2]>) {
         //iterate through each grid cell position. Set index of point to NB, and grid distance to K
@@ -341,29 +407,16 @@ impl ABOSGrid {
                     let nb_position = self.nb.get_unchecked_mut((ii, jj));
                     *nb_position = closest_point_in_tree_indx;
 
-                    let k_position = self.k_u_v.get_unchecked_mut((ii, jj));
+                    let k_position = self.k.get_unchecked_mut((ii, jj));
                     *k_position = if x_distance > y_distance { x_distance } else { y_distance };
-                    //let max_cell_dist = if x_distance > y_distance { x_distance } else { y_distance };
-                    //*k_position = (max_cell_dist, x_distance, y_distance);
                     if *k_position > (self.k_max) {
-                        self.k_max = *k_position;
+                        self.k_max = *k_position
                     }
                 }
             }
         }
     }
-
-    pub fn calculation_loop(&mut self){
-        let mut counter = 10;
-        while counter > 0 {
-            self.per_parts_constant_interpolation();
-            ABOSGrid::tension_loop_new(self);
-
-            counter -= 1;
-        }
-    }
-
-} //end abos
+}
 
 
 pub fn compute_grid_dimensions(x1: f64, x2: f64, y1: f64, y2: f64, dmc: f64, filter: f64)
@@ -385,12 +438,11 @@ pub fn compute_grid_dimensions(x1: f64, x2: f64, y1: f64, y2: f64, dmc: f64, fil
             break;
         }
     }
-
     //step 5 find your grid size for your smaller dimension such that it is as close to that of il as possible
     let j1: i32 = f64::round((y2 - y1) / (x2 - x1) * (i1 as f64 - 1.0)) as i32;
 
-    let dx = (x2 - x1) / (i1 - 1) as f64; //include the minus one so matices inclde the max points
-    let dy = (y2 - y1) / (j1 - 1) as f64;
+    let dx = (x2 - x1) / i1 as f64;
+    let dy = (y2 - y1) / j1 as f64;
 
     return (i1, j1, dx, dy);
 }
@@ -447,39 +499,39 @@ pub fn swap_and_get_ranges(points: &mut MatrixMN<f64, Dynamic, U3>) -> (f64, f64
 
 #[cfg(test)]
 mod tests {
-    use crate::{ABOSGrid, swap_and_get_ranges, initialize_dmatrix, 
-                initialize_kdtree_from_matrix, get_min_chebyshev_distance_kdi};
+    use crate::{compute_grid_dimensions, ABOSGrid, swap_and_get_ranges, initialize_dmatrix, 
+                initialize_kdtree_from_matrix, get_min_chebyshev_distance_kdi, get_min_chebyshev_distance_n2};
 
     extern crate nalgebra as na;
 
-    use na::{MatrixMN, Dynamic, U3};
+    use na::{DMatrix, DVector, MatrixMN, Dynamic, U3, U1, Dim};
     extern crate rand;
     use rand::prelude::*;
+// #[test]
+// fn it_works() {
+//     assert_eq!(2 + 2, 4);
+// }
+
+// #[test]
+// fn nalgebraImportCheck() {
+//     let axis  = na::Vector3::x_axis();
+//     let angle = 1.57;
+//     let b     = na::Rotation3::from_axis_angle(&axis, angle);
+//
+//     approx::relative_eq!(b.axis().unwrap(), axis);
+//     approx::relative_eq!(b.angle(), angle);
+// }
 
     #[test]
-    fn test_tension_loop_new() {
-        let mut points: Vec<Vec<f64>> = vec![];
-        let mut points2: Vec<Vec<f64>> = vec![];
-        for ii in 0..3 {
-            let iif = 1.0 + ii as f64;
-            let new_point:Vec<f64> = vec!(iif , iif*2.0, iif*3.0);
-            let new_point2:Vec<f64> = vec!(iif , iif*2.0, iif*3.0);
-            points.push(new_point);
-            points2.push(new_point2);
-        }
-        
-        let mut agrid1 = ABOSGrid::new(points, 30.0, 0);
-        let mut agrid2 = ABOSGrid::new(points2, 30.0, 0);
-        assert_eq!(agrid1.p, agrid2.p);
-        assert_eq!(agrid1.k_u_v, agrid2.k_u_v);
-        
-        agrid1.per_parts_constant_interpolation();
-        agrid2.per_parts_constant_interpolation();
-        assert_eq!(agrid1.p, agrid2.p);
-
-        ABOSGrid::tension_loop(agrid1.n, agrid1.i1 as usize, agrid1.j1 as usize, &mut agrid1.p, & agrid1.k_u_v);
-        ABOSGrid::tension_loop_new(&mut agrid2);        
-        assert_eq!(agrid1.p, agrid2.p);
+    fn test_correct_grid_size() {
+// let mut points: Vec<na::Vector3<f64>> = vec![];
+//
+// for i in 0..10 {
+//     let new_point = na::Vector3::new(rng.gen(), rng.gen(), rng.gen());
+//     points.push(new_point);
+// }
+// println!("{:?}", points);
+// test_abos = ABOSGrid::new(points);
     }
 
     #[test]
@@ -524,6 +576,20 @@ mod tests {
 
     #[test]
     fn test_min_chebyshev_dist() {
+        // -------- Testing Veracity of kd  --------------
+        // for _ in 0..500 {
+        //     let mut points: Vec<Vec<f64>> = vec![];
+        //     let mut rng = rand::thread_rng();
+        //     for _ in 0..500 {
+        //         let new_point:Vec<f64> = vec!(rng.gen_range(200.0,300.0),rng.gen_range(100.0,200.0),rng.gen_range(0.0,10.0));
+        //         points.push(new_point);
+        //     }
+        //     let xyz_points: MatrixMN<f64, Dynamic, U3> = initialize_dmatrix(points);
+        //     assert_eq!(
+        //         get_min_chebyshev_distance_n2(&xyz_points),
+        //         get_min_chebyshev_distance_kd(&xyz_points)
+        //     );
+        // }
 
         let check_xyz = na::Matrix3::new(1.0, 2.0, 3.0,
                                          2.0, 4.0, 6.0,
