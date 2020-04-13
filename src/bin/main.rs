@@ -14,8 +14,8 @@ fn main() {
 
     let inputs = ABOSInputs{
         degree: 0,
-        filter: 0.0,
-        points: points
+        filter: 10.0,
+        points
     };
 
     abos_run(&inputs);

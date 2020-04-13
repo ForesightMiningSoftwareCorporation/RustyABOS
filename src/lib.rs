@@ -23,8 +23,9 @@ pub struct ABOSInputs {
 }
 
 pub struct ABOSImmutable {
-    pub r: usize,
-    pub l: f64,
+    degree: i8,
+    r: usize,
+    l: f64,
     xyz_points: MatrixMN<f64, Dynamic, U3>,
     //Derived Points
     x1: f64,
@@ -42,9 +43,9 @@ pub struct ABOSImmutable {
     //ABOS Calculated Parameters
     dmc: f64,
     //minimal chebyshev distance
-    pub i1: i32,
+    i1: i32,
     //xsize of grid
-    pub j1: i32,
+    j1: i32,
     //ysize of grid
     dx: f64,
     //size of grid on x
@@ -72,10 +73,8 @@ impl ABOSImmutable {
 
         [x_coordinate, y_coordinate]
     }
-    fn set_kmax_and_kuv(&mut self, new_k_max:usize){
-        self.k_max = new_k_max;
-    }
 }
+
 pub fn new(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
     //unwrapping to 1d vector [x1, y1, z1, x2, y2, z2...]
     //real function call would just pass the vector into DMatrix
@@ -114,7 +113,10 @@ pub fn new(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
     let mut r = 0;
     let mut l = 0.0;
 
+    let mut k_u_v: MatrixMN<(usize, usize, usize), Dynamic, Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), (0, 0, 0));
+
     let mut abos_immutable = ABOSImmutable {
+        degree: abos_inputs.degree,
         r,
         l,
         xyz_points, //INPUT all points XYZ
@@ -131,7 +133,7 @@ pub fn new(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
         dy, //size of grid on y
         z, //vector if z coordinates XYZ
         nb, // Matrix of nearest points on grid. Containing indexes to nearest point in the XYZ array
-        k_u_v: nu, // Grid distance of each grid to the point indexed in nb
+        k_u_v, // Grid distance of each grid to the point indexed in nb
         k_max: 0,  //maximal element of matrix k
         rs, // Resolution of map
         xy_swaped,
@@ -141,6 +143,7 @@ pub fn new(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
         Dynamic::from_usize(abos_immutable.i1 as usize),
         Dynamic::from_usize(abos_immutable.j1 as usize), 0.0,
     );
+    println!("{}",p);
     let dp: MatrixMN<f64, Dynamic, Dynamic> = p.clone_owned();
 
     let dz = abos_immutable.z.clone_owned();
@@ -151,20 +154,15 @@ pub fn new(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
     };
 
     let mut k_max = 0;
-    let mut k_u_v: MatrixMN<(usize, usize, usize), Dynamic, Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), (0, 0, 0));
-
-    init_distance_point_matrixes_kdi(&abos_immutable,&abos_mutable,&kdtree,&mut k_max,&mut nb, &mut k_u_v);
+    init_distance_point_matrixes_kdi(&mut abos_immutable,&abos_mutable,&kdtree);
     let(r, l) = compute_rl(abos_inputs.degree,abos_immutable.k_max);
-
-    abos_immutable.set_kmax(k_max);
-
     abos_immutable.r = r;
     abos_immutable.l = l;
 
     (abos_immutable,abos_mutable)
 }
 
-struct ABOSMutable {
+pub struct ABOSMutable {
     //size of grid on y
     pub p: MatrixMN<f64, Dynamic, Dynamic>,
     //elements of the elevation matrix [i,j] size
@@ -186,17 +184,17 @@ struct ABOSMutable {
 // 7. P→DP, continue from step 2 again (= start the next iteration cycle)
 
 pub fn abos_run(abos_inputs: &ABOSInputs) {
-    let (abos_immutable,abos_mutable) = new(&abos_inputs);
+    let (abos_immutable, mut abos_mutable) = new(&abos_inputs);
     // //Calculates k_u_v and kmax
 
-
-    // let mut num_loops = 1;
-    // while num_loops > 0 {
-    //     self.per_parts_constant_interpolation();
-    //     ABOSGrid::tension_loop(ABOSParameters, &mut p);
-    //     ABOSGrid::linear_tension_loop(self);
-    //     num_loops -= 1;
-    // }
+    let mut num_loops = 1;
+    while num_loops > 0 {
+        per_parts_constant_interpolation(&mut abos_mutable, &abos_immutable);
+        tension_loop(&mut abos_mutable, &abos_immutable);
+        linear_tension_loop(&mut abos_mutable, &abos_immutable);
+        num_loops -= 1;
+    }
+    output_all_matrixes(&&abos_mutable,&abos_immutable);
 }
 
 //
@@ -260,8 +258,9 @@ fn get_scaled_u_v(u: f64, v: f64, n: f64) -> (f64, f64) {
 }
 
 //makes a weighted average of 4 corner cells, top right, top left, bot right, bot left
-fn linear_tension_cell(q: f64, ii: usize, jj: usize, u: usize, v: usize, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
+fn linear_tension_cell(q: f64, ii: usize, jj: usize, u: usize, v: usize, abos_mutable: &mut ABOSMutable) -> f64 {
     // println!("q {} u  {} v {}", q, u, v);
+    let mut p = &abos_mutable.p;
     let top_l = if (ii + u) >= p.nrows() as usize || (jj + v) >= p.ncols() {
         0.0
     } else {
@@ -301,8 +300,9 @@ fn linear_tension_cell(q: f64, ii: usize, jj: usize, u: usize, v: usize, p: &mut
 }
 
 
-fn tension_cell(ii: i32, jj: i32, k_i_j_mod: i32, p: &mut MatrixMN<f64, Dynamic, Dynamic>) -> f64 {
+fn tension_cell(ii: i32, jj: i32, k_i_j_mod: i32, abos_mutable: &mut ABOSMutable) -> f64 {
     //we need to get Pi , j=Pik , jPi , jkPi−k , jPi , j−k
+    let mut p = &abos_mutable.p;
     let min_i: i32 = ii - k_i_j_mod;
     let min_j: i32 = jj - k_i_j_mod;
     let max_i: i32 = ii + k_i_j_mod;
@@ -336,78 +336,74 @@ fn tension_cell(ii: i32, jj: i32, k_i_j_mod: i32, p: &mut MatrixMN<f64, Dynamic,
     p1
 }
 
-// pub fn per_parts_constant_interpolation(&mut self) {
-//     for (ii, row) in self.nb.row_iter().enumerate() {
-//         for (jj, col) in row.iter().enumerate() {
-//             let point_closest = self.xyz_points.row(*col);
-//             unsafe {
-//                 let p_position = self.p.get_unchecked_mut((ii, jj));
-//                 *p_position = point_closest[2];
-//             }
-//         }
-//     }
-// }
+pub fn per_parts_constant_interpolation(abos_mutable: &mut ABOSMutable,abos_immutable: &ABOSImmutable) {
+    for (ii, row) in abos_immutable.nb.row_iter().enumerate() {
+        for (jj, col) in row.iter().enumerate() {
+            let point_closest = abos_immutable.xyz_points.row(*col);
+            unsafe {
+                let p_position = abos_mutable.p.get_unchecked_mut((ii, jj));
+                *p_position = point_closest[2];
+            }
+        }
+    }
+}
 
 
 
-// pub fn tension_loop(abos_grid: &mut ABOSGrid) {
-//     let n = max(4, abos_grid.k_max / 2 + 2);
-//     for n_countdown in (1..n + 1).rev() {
-//         for (ii, row) in abos_grid.k_u_v.row_iter().enumerate() {
-//             for (jj, col) in row.iter().enumerate() {
-//                 let k_i_j_mod = std::cmp::min(col.0, n_countdown);
-//                 let new_p = tension_cell(ii as i32, jj as i32, k_i_j_mod as i32, &mut abos_grid.p);
-//                 unsafe {
-//                     if new_p != -INFINITY {
-//                         *abos_grid.p.get_unchecked_mut((ii, jj)) = new_p;
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
+pub fn tension_loop(abos_mutable: &mut ABOSMutable,abos_immutable: &ABOSImmutable) {
+    let n = max(4, abos_immutable.k_max / 2 + 2);
+    for n_countdown in (1..n + 1).rev() {
+        for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
+            for (jj, col) in row.iter().enumerate() {
+                let k_i_j_mod = std::cmp::min(col.0, n_countdown);
+                let new_p = tension_cell(ii as i32, jj as i32, k_i_j_mod as i32, abos_mutable);
+                unsafe {
+                    if new_p != -INFINITY {
+                        *abos_mutable.p.get_unchecked_mut((ii, jj)) = new_p;
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn linear_tension_loop(abos_mutable: &mut ABOSMutable,abos_immutable: &ABOSImmutable) {
+    let n = max(4, abos_immutable.k_max / 2 + 2);
+    for n_countdown in (1..n + 1).rev() {
+        for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
+            for (jj, col) in row.iter().enumerate() {
+                let k_i_j_mod = std::cmp::min(col.0, n_countdown);
+                let q = get_q_value(abos_immutable, k_i_j_mod);
+                let (u_mod, v_mod) = get_scaled_u_v(col.1 as f64, col.2 as f64, n as f64);
+                let new_p = linear_tension_cell(q, ii, jj, u_mod as usize, v_mod as usize, abos_mutable);
+                unsafe {
+                    *abos_mutable.p.get_unchecked_mut((ii, jj)) = new_p;
+                }
+            }
+        }
+    }
+}
+
+fn get_q_value(abos_immutable: &ABOSImmutable, k_i_j: usize) -> f64 {
+    //println!("self.l {}, self.k_max {}", self.l, self.k_max);
+    return match abos_immutable.degree {
+        3 => 1.0,
+        2 => {
+            abos_immutable.l * (abos_immutable.k_max - k_i_j) as f64
+        }
+        _ => {
+            abos_immutable.l * ((abos_immutable.k_max - k_i_j) as f64).powi(2)
+        }
+    };
+}
+
+pub fn output_all_matrixes(abos_mutable: &ABOSMutable,abos_immutable: &ABOSImmutable) {
+    println!("dmc {}", abos_immutable.dmc);
+    println!("NB {:.1} Z{:.1} DZ{:.1} DP{:.1} P{:.1}", abos_immutable.nb, abos_immutable.z, abos_mutable.dz, abos_mutable.dp, abos_mutable.p);
+}
 //
-// pub fn linear_tension_loop(abos_params: &mut ABOSImmutable, &mut p:&mut MatrixMN<f64, Dynamic, Dynamic> ) {
-//     let n = max(4, abos_grid.k_max / 2 + 2);
-//     for n_countdown in (1..n + 1).rev() {
-//         for (ii, row) in abos_grid.k_u_v.row_iter().enumerate() {
-//             for (jj, col) in row.iter().enumerate() {
-//                 let k_i_j_mod = std::cmp::min(col.0, n_countdown);
-//                 let q = abos_grid.get_q_value(k_i_j_mod);
-//                 //println!("q {}", q);
-//                 let (u_mod, v_mod) = get_scaled_u_v(col.1 as f64, col.2 as f64, n as f64);
-//                 let new_p = linear_tension_cell(q, ii, jj, u_mod as usize, v_mod as usize, &mut p);
-//                 unsafe {
-//                     *abos_grid.p.get_unchecked_mut((ii, jj)) = new_p;
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// fn get_q_value(&self, k_i_j: usize) -> f64 {
-//     //println!("self.l {}, self.k_max {}", self.l, self.k_max);
-//     return match self.degree {
-//         3 => 1.0,
-//         2 => {
-//             self.l * (self.k_max - k_i_j) as f64
-//         }
-//         _ => {
-//             self.l * ((self.k_max - k_i_j) as f64).powi(2)
-//         }
-//     };
-// }
-//
-// pub fn output_all_matrixes(&self) {
-//     println!("dmc {}", self.dmc);
-//     println!("NB {:.1} Z{:.1} DZ{:.1} DP{:.1} P{:.1}", self.nb, self.z, self.dz, self.dp, self.p);
-// }
-//
-pub fn init_distance_point_matrixes_kdi(abos_immutable: &ABOSImmutable, abos_mutable: &ABOSMutable,
+pub fn init_distance_point_matrixes_kdi(abos_immutable: &mut ABOSImmutable, abos_mutable: &ABOSMutable,
                                         kdtree: &KdTree<f64, usize, [f64; 2]>,
-                                        k_max: &mut usize,
-                                        nb:&mut MatrixMN<usize, Dynamic, Dynamic>,
-                                        k_u_v: &mut MatrixMN<(usize, usize, usize), Dynamic, Dynamic>
 
 ) {
     //iterate through each grid cell position. Set index of point to NB, and grid distance to K
@@ -422,15 +418,15 @@ pub fn init_distance_point_matrixes_kdi(abos_immutable: &ABOSImmutable, abos_mut
             let y_distance = f64::round(f64::abs((closest_point[1] - position[1]) / abos_immutable.dy)) as usize;
 
             unsafe {
-                let nb_position = nb.get_unchecked_mut((ii, jj));
+                let nb_position = abos_immutable.nb.get_unchecked_mut((ii, jj));
                 *nb_position = closest_point_in_tree_indx;
 
-                let k_position = k_u_v.get_unchecked_mut((ii, jj));
+                let k_position = abos_immutable.k_u_v.get_unchecked_mut((ii, jj));
                 //*k_position = if x_distance > y_distance { x_distance } else { y_distance };
                 let max_cell_dist = if x_distance > y_distance { x_distance } else { y_distance };
                 *k_position = (max_cell_dist, x_distance, y_distance);
                 if k_position.0 > (abos_immutable.k_max) {
-                    *k_max = k_position.0;
+                    abos_immutable.k_max = k_position.0;
                 }
             }
         }
