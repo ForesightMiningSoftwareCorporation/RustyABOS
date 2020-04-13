@@ -12,8 +12,6 @@ use kdtree::distance::squared_euclidean;
 use na::{DMatrix, DVector, MatrixMN, Dynamic, RealField, U3, U1, Dim};
 use std::cmp::max;
 
-mod deprecated;
-
 pub struct ABOSInputs {
     //User Inputs
     pub degree: i8,
@@ -258,7 +256,7 @@ fn get_scaled_u_v(u: f64, v: f64, n: f64) -> (f64, f64) {
 }
 
 //makes a weighted average of 4 corner cells, top right, top left, bot right, bot left
-fn linear_tension_cell(q: f64, ii: usize, jj: usize, u: usize, v: usize, abos_mutable: &mut ABOSMutable) -> f64 {
+fn linear_tension_cell(q: f64, ii: usize, jj: usize, u: usize, v: usize,abos_immutable: &ABOSImmutable, abos_mutable: &mut ABOSMutable) -> f64 {
     // println!("q {} u  {} v {}", q, u, v);
     let mut p = &abos_mutable.p;
     let top_l = if (ii + u) >= p.nrows() as usize || (jj + v) >= p.ncols() {
@@ -293,7 +291,7 @@ fn linear_tension_cell(q: f64, ii: usize, jj: usize, u: usize, v: usize, abos_mu
         }
     };
 
-    let lin_ten = (q * top_l + q * bot_r + top_r + bot_l) / (2.0 * q + 2.0);
+    let lin_ten = (q * top_l + q * bot_r + top_r*abos_immutable.r as f64 + bot_l*abos_immutable.r as f64) / (2.0 * q + 2.0);
     //
 
     lin_ten
@@ -375,7 +373,7 @@ pub fn linear_tension_loop(abos_mutable: &mut ABOSMutable,abos_immutable: &ABOSI
                 let k_i_j_mod = std::cmp::min(col.0, n_countdown);
                 let q = get_q_value(abos_immutable, k_i_j_mod);
                 let (u_mod, v_mod) = get_scaled_u_v(col.1 as f64, col.2 as f64, n as f64);
-                let new_p = linear_tension_cell(q, ii, jj, u_mod as usize, v_mod as usize, abos_mutable);
+                let new_p = linear_tension_cell(q, ii, jj, u_mod as usize, v_mod as usize, abos_immutable,abos_mutable);
                 unsafe {
                     *abos_mutable.p.get_unchecked_mut((ii, jj)) = new_p;
                 }
