@@ -100,7 +100,7 @@ pub fn new(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
 
     //step 4: Create empty vectors
     let mut nb: MatrixMN<usize, Dynamic, Dynamic> = MatrixMN::from_element_generic(Dynamic::from_usize(i1 as usize), Dynamic::from_usize(j1 as usize), 0);
-       // Pcontainer.matrix::
+    // Pcontainer.matrix::
     let z: DVector<f64> = xyz_points.column(2).clone_owned();
 
     let res_x = (x2 - x1) / abos_inputs.filter;
@@ -141,7 +141,7 @@ pub fn new(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
         Dynamic::from_usize(abos_immutable.i1 as usize),
         Dynamic::from_usize(abos_immutable.j1 as usize), 0.0,
     );
-    println!("{}",p);
+    println!("{}", p);
     let dp: MatrixMN<f64, Dynamic, Dynamic> = p.clone_owned();
 
     let dz = abos_immutable.z.clone_owned();
@@ -152,12 +152,12 @@ pub fn new(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
     };
 
     let mut k_max = 0;
-    init_distance_point_matrixes_kdi(&mut abos_immutable,&abos_mutable,&kdtree);
-    let(r, l) = compute_rl(abos_inputs.degree,abos_immutable.k_max);
+    init_distance_point_matrixes_kdi(&mut abos_immutable, &abos_mutable, &kdtree);
+    let (r, l) = compute_rl(abos_inputs.degree, abos_immutable.k_max);
     abos_immutable.r = r;
     abos_immutable.l = l;
 
-    (abos_immutable,abos_mutable)
+    (abos_immutable, abos_mutable)
 }
 
 pub struct ABOSMutable {
@@ -192,7 +192,7 @@ pub fn abos_run(abos_inputs: &ABOSInputs) {
         linear_tension_loop(&mut abos_mutable, &abos_immutable);
         num_loops -= 1;
     }
-    output_all_matrixes(&&abos_mutable,&abos_immutable);
+    output_all_matrixes(&&abos_mutable, &abos_immutable);
 }
 
 //
@@ -256,47 +256,6 @@ fn get_scaled_u_v(u: f64, v: f64, n: f64) -> (f64, f64) {
 }
 
 //makes a weighted average of 4 corner cells, top right, top left, bot right, bot left
-fn linear_tension_cell(q: f64, ii: usize, jj: usize, u: usize, v: usize,abos_immutable: &ABOSImmutable, abos_mutable: &mut ABOSMutable) -> f64 {
-    // println!("q {} u  {} v {}", q, u, v);
-    let mut p = &abos_mutable.p;
-    let top_l = if (ii + u) >= p.nrows() as usize || (jj + v) >= p.ncols() {
-        0.0
-    } else {
-        unsafe {
-            *p.get_unchecked((ii + u, jj + v))
-        }
-    };
-
-    let bot_r = if (ii as i32 - u as i32) < 0 || (jj as i32 - v as i32) < 0 {
-        0.0
-    } else {
-        unsafe {
-            *p.get_unchecked((ii - u, jj - v))
-        }
-    };
-
-    let top_r = if (ii as i32 - u as i32) < 0 || jj + v >= p.ncols() {
-        0.0
-    } else {
-        unsafe {
-            *p.get_unchecked((ii - u, jj + v))
-        }
-    };
-
-    let bot_l = if ii + u >= p.nrows() as usize || (jj as i32 - v as i32) < 0 {
-        0.0
-    } else {
-        unsafe {
-            *p.get_unchecked((ii + u, jj - v))
-        }
-    };
-
-    let lin_ten = (q * top_l + q * bot_r + top_r*abos_immutable.r as f64 + bot_l*abos_immutable.r as f64) / (2.0 * q + 2.0);
-    //
-
-    lin_ten
-}
-
 
 fn tension_cell(ii: i32, jj: i32, k_i_j_mod: i32, abos_mutable: &mut ABOSMutable) -> f64 {
     //we need to get Pi , j=Pik , jPi , jkPi−k , jPi , j−k
@@ -334,7 +293,7 @@ fn tension_cell(ii: i32, jj: i32, k_i_j_mod: i32, abos_mutable: &mut ABOSMutable
     p1
 }
 
-pub fn per_parts_constant_interpolation(abos_mutable: &mut ABOSMutable,abos_immutable: &ABOSImmutable) {
+pub fn per_parts_constant_interpolation(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
     for (ii, row) in abos_immutable.nb.row_iter().enumerate() {
         for (jj, col) in row.iter().enumerate() {
             let point_closest = abos_immutable.xyz_points.row(*col);
@@ -347,8 +306,7 @@ pub fn per_parts_constant_interpolation(abos_mutable: &mut ABOSMutable,abos_immu
 }
 
 
-
-pub fn tension_loop(abos_mutable: &mut ABOSMutable,abos_immutable: &ABOSImmutable) {
+pub fn tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
     let n = max(4, abos_immutable.k_max / 2 + 2);
     for n_countdown in (1..n + 1).rev() {
         for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
@@ -365,7 +323,54 @@ pub fn tension_loop(abos_mutable: &mut ABOSMutable,abos_immutable: &ABOSImmutabl
     }
 }
 
-pub fn linear_tension_loop(abos_mutable: &mut ABOSMutable,abos_immutable: &ABOSImmutable) {
+fn linear_tension_cell(q: f64, ii: usize, jj: usize, u: usize, v: usize, abos_immutable: &ABOSImmutable, abos_mutable: &mut ABOSMutable) -> f64 {
+    // println!("q {} u  {} v {}", q, u, v);
+    let mut p = &abos_mutable.p;
+    let (top_l, top_l_b) = if (ii + u) >= p.nrows() as usize || (jj + v) >= p.ncols() {
+        (0.0, 0.0)
+    } else {
+        unsafe {
+            (*p.get_unchecked((ii + u, jj + v)), 1.0)
+        }
+    };
+
+    let (bot_r, bot_r_b) = if (ii as i32 - u as i32) < 0 || (jj as i32 - v as i32) < 0 {
+        (0.0, 0.0)
+    } else {
+        unsafe {
+            (*p.get_unchecked((ii - u, jj - v)), 1.0)
+        }
+    };
+
+    let (top_r, top_r_b) = if (ii as i32 - u as i32) < 0 || jj + v >= p.ncols() {
+        (0.0, 0.0)
+    } else {
+        unsafe {
+            (*p.get_unchecked((ii - u, jj + v)), 1.0)
+        }
+    };
+
+    let (bot_l, bot_l_b) = if ii + u >= p.nrows() as usize || (jj as i32 - v as i32) < 0 {
+        (0.0, 0.0)
+    } else {
+        unsafe {
+            (*p.get_unchecked((ii + u, jj - v)), 1.0)
+        }
+    };
+    let bottom_divider = (q * top_l_b) + (q * top_r_b) + bot_l_b + bot_r_b;
+
+    let lin_ten = if bottom_divider == 0.0 {
+        -INFINITY
+    } else {
+        let to_return = (q * top_l + q * bot_r + top_r * abos_immutable.r as f64 + bot_l * abos_immutable.r as f64) / (bottom_divider);
+        to_return
+    };
+    lin_ten
+}
+
+
+
+pub fn linear_tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
     let n = max(4, abos_immutable.k_max / 2 + 2);
     for n_countdown in (1..n + 1).rev() {
         for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
@@ -373,9 +378,11 @@ pub fn linear_tension_loop(abos_mutable: &mut ABOSMutable,abos_immutable: &ABOSI
                 let k_i_j_mod = std::cmp::min(col.0, n_countdown);
                 let q = get_q_value(abos_immutable, k_i_j_mod);
                 let (u_mod, v_mod) = get_scaled_u_v(col.1 as f64, col.2 as f64, n as f64);
-                let new_p = linear_tension_cell(q, ii, jj, u_mod as usize, v_mod as usize, abos_immutable,abos_mutable);
-                unsafe {
-                    *abos_mutable.p.get_unchecked_mut((ii, jj)) = new_p;
+                let new_p = linear_tension_cell(q, ii, jj, u_mod as usize, v_mod as usize, abos_immutable, abos_mutable);
+                if new_p != -INFINITY{
+                    unsafe {
+                        *abos_mutable.p.get_unchecked_mut((ii, jj)) = new_p;
+                    }
                 }
             }
         }
@@ -395,14 +402,14 @@ fn get_q_value(abos_immutable: &ABOSImmutable, k_i_j: usize) -> f64 {
     };
 }
 
-pub fn output_all_matrixes(abos_mutable: &ABOSMutable,abos_immutable: &ABOSImmutable) {
+pub fn output_all_matrixes(abos_mutable: &ABOSMutable, abos_immutable: &ABOSImmutable) {
     println!("dmc {}", abos_immutable.dmc);
     println!("NB {:.1} Z{:.1} DZ{:.1} DP{:.1} P{:.1}", abos_immutable.nb, abos_immutable.z, abos_mutable.dz, abos_mutable.dp, abos_mutable.p);
 }
+
 //
 pub fn init_distance_point_matrixes_kdi(abos_immutable: &mut ABOSImmutable, abos_mutable: &ABOSMutable,
                                         kdtree: &KdTree<f64, usize, [f64; 2]>,
-
 ) {
     //iterate through each grid cell position. Set index of point to NB, and grid distance to K
     for (ii, row) in abos_mutable.dp.row_iter().enumerate() {
@@ -429,7 +436,10 @@ pub fn init_distance_point_matrixes_kdi(abos_immutable: &mut ABOSImmutable, abos
             }
         }
     }
+
+    println!("{:?}", abos_immutable.k_u_v);
 }
+
 //
 pub fn compute_grid_dimensions(x1: f64, x2: f64, y1: f64, y2: f64, dmc: f64, filter: f64)
                                -> (i32, i32, f64, f64) {
