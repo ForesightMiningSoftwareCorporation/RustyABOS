@@ -10,8 +10,7 @@ use kdtree::KdTree;
 use kdtree::distance::squared_euclidean;
 //use alga::general::{Real}; //generic index functions
 use na::{DMatrix, DVector, MatrixMN, DMatrixSlice, Dynamic, RealField, U3, U1, Dim};
-use std::cmp::max;
-use std::cmp::min;
+use std::cmp;
 
 pub struct ABOSInputs {
     //User Inputs
@@ -149,14 +148,14 @@ pub fn new_abos(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
     );
     println!("{}", p);
     let dp: MatrixMN<f64, Dynamic, Dynamic> = p.clone_owned();
-    let tt: MatrixMN<f64, Dynamic, Dynamic> = p.clone_owned();
+    let t_smooth: MatrixMN<f64, Dynamic, Dynamic> = p.clone_owned();
 
     let dz = abos_immutable.z.clone_owned();
     let mut abos_mutable = ABOSMutable {
         p,
         dp,
         dz,
-        tt,
+        t_smooth,
     };
 
     let mut k_max = 0;
@@ -174,7 +173,7 @@ pub struct ABOSMutable {
     //elements of the elevation matrix [i,j] size
     dp: MatrixMN<f64, Dynamic, Dynamic>,
     //matrix of wieghts used in smoothing, same sze as p & dp
-    tt: MatrixMN<f64, Dynamic, Dynamic>,
+    t_smooth: MatrixMN<f64, Dynamic, Dynamic>,
     
     //vector if z coordinates XYZ
     dz: DVector<f64>,
@@ -323,11 +322,11 @@ pub fn per_parts_constant_interpolation(abos_mutable: &mut ABOSMutable, abos_imm
 
 
 pub fn tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
-    let n = max(4, abos_immutable.k_max / 2 + 2);
+    let n = cmp::max(4, abos_immutable.k_max / 2 + 2);
     for n_countdown in (1..n + 1).rev() {
         for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
             for (jj, col) in row.iter().enumerate() {
-                let k_i_j_mod = min(col.0, n_countdown);
+                let k_i_j_mod = cmp::min(col.0, n_countdown);
                 let new_p = tension_cell(ii as i32, jj as i32, k_i_j_mod as i32, abos_mutable);
                 unsafe {
                     if new_p != -INFINITY {
@@ -387,11 +386,11 @@ fn linear_tension_cell(q: f64, ii: usize, jj: usize, u: usize, v: usize, abos_im
 
 
 pub fn linear_tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
-    let n = max(4, abos_immutable.k_max / 2 + 2);
+    let n = cmp::max(4, abos_immutable.k_max / 2 + 2);
     for n_countdown in (1..n + 1).rev() {
         for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
             for (jj, col) in row.iter().enumerate() {
-                let k_i_j_mod = min(col.0, n_countdown);
+                let k_i_j_mod = cmp::min(col.0, n_countdown);
                 let q = get_q_linear_tension(abos_immutable, k_i_j_mod);
                 let (u_mod, v_mod) = get_scaled_u_v(col.1 as f64, col.2 as f64, n as f64);
                 let new_p = linear_tension_cell(q, ii, jj, u_mod as usize, v_mod as usize, abos_immutable, abos_mutable);
@@ -419,28 +418,31 @@ fn get_q_linear_tension(abos_immutable: &ABOSImmutable, k_i_j: usize) -> f64 {
     };
 }
 
-//min_i and max_i are inclusive
-//
-pub fn get_valid_cell_bounds(ii : usize , di: usize , min_i : usize , max_i : usize) -> (usize, usize) {
+//tt : midpoint, checking window from
+//dt : amount to look above below
+//min_i : minimum acceptable value, inclusive
+//max_i  : maximum acceptable value inclusive
+// returns (tt - dt, tt + dt) pending on min_t, max_t
+ pub fn get_valid_dim_bounds(tt : usize , dt: usize , min_t : usize , max_t : usize) -> (usize, usize) {
     let lower_bound = 
-        if ii < di { 
-                min_i } else if ii - di < min_i {
-                    min_i } else {
-                        ii - di};
+        if tt < dt { 
+            min_t } else if tt - dt < min_t {
+                min_t } else {
+                        tt - dt};
     let upper_bound = 
-        if ii + di > max_i { 
-            max_i } else {
-                ii + di};
+        if tt + dt > max_t { 
+            max_t } else {
+                tt + dt};
     (lower_bound, upper_bound)
 }
 
-pub fn set_tt(abos_mutable: &mut ABOSMutable){
+pub fn set_t_smooth(abos_mutable: &mut ABOSMutable){
     //Set initial tt matrix
     for (ii, row) in abos_mutable.p.row_iter().enumerate() {
-        let (kk_min, kk_max) = get_valid_cell_bounds(ii, 2, 0, abos_mutable.p.nrows() - 1);
+        let (kk_min, kk_max) = get_valid_dim_bounds(ii, 2, 0, abos_mutable.p.nrows() - 1);
         for (jj, _col) in row.iter().enumerate() {
             
-            let (ll_min, ll_max) = get_valid_cell_bounds(jj, 2, 0, abos_mutable.p.ncols() - 1);
+            let (ll_min, ll_max) = get_valid_dim_bounds(jj, 2, 0, abos_mutable.p.ncols() - 1);
             //println!("kk_max {} kk_min {} ll_max {} ll_min {} ", kk_max, kk_min, ll_max, ll_min);
             let num_cells = ((kk_max - kk_min + 1) * (ll_max - ll_min + 1)) as f64;
             //.slice(start, shape)
@@ -448,34 +450,34 @@ pub fn set_tt(abos_mutable: &mut ABOSMutable){
             
             unsafe {
                 pij_resid_sum -= num_cells* (*abos_mutable.p.get_unchecked((ii, jj)));
-                *abos_mutable.tt.get_unchecked_mut((ii, jj)) = pij_resid_sum * pij_resid_sum;
+                *abos_mutable.t_smooth.get_unchecked_mut((ii, jj)) = pij_resid_sum * pij_resid_sum;
             }
         } 
     }
 
-    //scale tt matrix to between 0 to 100
-    let min_tt = abos_mutable.tt.min();
-    let dt = abos_mutable.tt.max() - min_tt;
-    abos_mutable.tt.apply(|x| (x - min_tt)*100.0/dt);
+    //scale t_smooth matrix to between 0 to 100
+    let min_t = abos_mutable.t_smooth.min();
+    let dt = abos_mutable.t_smooth.max() - min_t;
+    abos_mutable.t_smooth.apply(|x| (x - min_t)*100.0/dt);
 }
 
 
 pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
-    let n = max(4, abos_immutable.k_max * abos_immutable.k_max / 16);
+    let n = cmp::max(4, abos_immutable.k_max * abos_immutable.k_max / 16);
     println!("smoothing_loop");
 
     for _n_countdown in (1..n + 1).rev() {
-        set_tt(abos_mutable);
+        set_t_smooth(abos_mutable);
         for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
-            let (kk_min, kk_max) = get_valid_cell_bounds(ii, 1, 0, abos_mutable.p.nrows() - 1);
+            let (kk_min, kk_max) = get_valid_dim_bounds(ii, 1, 0, abos_mutable.p.nrows() - 1);
             for (jj, _col) in row.iter().enumerate() {
-                let (ll_min, ll_max) = get_valid_cell_bounds(jj, 1, 0, abos_mutable.p.ncols() - 1);
+                let (ll_min, ll_max) = get_valid_dim_bounds(jj, 1, 0, abos_mutable.p.ncols() - 1);
 
                 let num_cells = ((kk_max - kk_min + 1) * (ll_max - ll_min + 1)) as f64;
                 let mut pij_new = abos_mutable.p.slice((kk_min, ll_min), (kk_max - kk_min, ll_max - ll_min )).sum();
                 unsafe{
-                    pij_new += num_cells * abos_immutable.q_smooth * (*abos_mutable.p.get_unchecked((ii, jj))) * (*abos_mutable.tt.get_unchecked((ii, jj)) - 1.0);
-                    pij_new /= abos_immutable.q_smooth * (*abos_mutable.tt.get_unchecked((ii, jj))) + 8.0;
+                    pij_new += num_cells * abos_immutable.q_smooth * (*abos_mutable.p.get_unchecked((ii, jj))) * (*abos_mutable.t_smooth.get_unchecked((ii, jj)) - 1.0);
+                    pij_new /= abos_immutable.q_smooth * (*abos_mutable.t_smooth.get_unchecked((ii, jj))) + 8.0;
                     *abos_mutable.p.get_unchecked_mut((ii, jj)) = pij_new;
                 }
             }
