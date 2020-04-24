@@ -370,7 +370,7 @@ pub fn per_parts_constant_interpolation(abos_mutable: &mut ABOSMutable, abos_imm
             let point_closest = abos_immutable.xyz_points.row(*col);
             unsafe {
                 let p_position = abos_mutable.p.get_unchecked_mut((ii, jj));
-                *p_position = point_closest[2];
+                *p_position = point_closest[2]; 
             }
         }
     }
