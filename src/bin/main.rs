@@ -3,6 +3,7 @@ extern crate rand;
 //use rand::prelude::*;
 
 fn main() {
+    
     let mut points: Vec<Vec<f64>> = vec![];
     for ii in 0..3 {
         //making f64 then converting seemse better than casting f64 3 times
@@ -14,10 +15,12 @@ fn main() {
 
     let inputs = ABOSInputs{
         degree: 0,
-        filter: 10.0,
+        filter: 20.0,
         points,
         q_smooth: 0.5,
     };
+    
+    println!("inputs.points {:?}", inputs.points);
 
     abos_run(&inputs);
 

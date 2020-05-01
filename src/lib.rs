@@ -195,40 +195,62 @@ pub struct ABOSMutable {
 // 7. P→DP, continue from step 2 again (= start the next iteration cycle)
 
 pub fn abos_run(abos_inputs: &ABOSInputs) {
+    //1 Initialization
     let (abos_immutable, mut abos_mutable) = new_abos(&abos_inputs);
     // //Calculates k_u_v and kmax
-
     println!(
         "x cells {} y cells {}",
         abos_immutable.i1, abos_immutable.j1
     );
+    println!("--------//1 Initialization");
+    output_all_matrixes(&&abos_mutable, &abos_immutable);
 
-    per_parts_constant_interpolation(&mut abos_mutable, &abos_immutable);
-    tension_loop(&mut abos_mutable, &abos_immutable);
-    linear_tension_loop(&mut abos_mutable, &abos_immutable);
-    //smoothing_loop(&mut abos_mutable, &abos_immutable);
     loop {
-        //4 Dz - p => dz
+        //2 Per partes constant interpolation of values DZ into the matrix P
+        per_parts_constant_interpolation(&mut abos_mutable, &abos_immutable);
+        //println!("--------//2 Per partes constant interpolation of values DZ into the matrix P");
+        //output_all_matrixes(&&abos_mutable, &abos_immutable);
+
+        //3 Tensioning and smoothing of the matrix P
+        tension_loop(&mut abos_mutable, &abos_immutable);
+        //println!("--------//3 tensioning");
+        //output_all_matrixes(&&abos_mutable, &abos_immutable);
+
+        linear_tension_loop(&mut abos_mutable, &abos_immutable);
+        //println!("--------//3 linear tensioning");
+        //output_all_matrixes(&&abos_mutable, &abos_immutable);
+
+        smoothing_loop(&mut abos_mutable, &abos_immutable);
+        //println!("--------//3 smoothing");
+        //output_all_matrixes(&&abos_mutable, &abos_immutable);
+
+        //4 p + dp -> P
+        abos_mutable.p += &abos_mutable.dp;
+        //println!("--------//4 p + dp -> P");
+        //output_all_matrixes(&&abos_mutable, &abos_immutable);
+        //back to 4
+
+        //5 Dz - p => dz (Z - f (Xi, Yi) →DZi )
         calculate_dz(&mut abos_mutable, &abos_immutable);
+        //println!("--------//5 Dz - p => dz (Z - f (Xi, Yi) →DZi )");
+        //output_all_matrixes(&&abos_mutable, &abos_immutable);
         // abos_mutable.dz -= abos_mutable.p;
-        //5 calculate maximal difference
+
+        //6 calculate maximal difference
         let max_difference = abos_mutable.dz.max();
-        println!("max difference {}", max_difference);
         if max_difference.abs() < 0.1 {
+            println!("max_difference {}", max_difference);
             break;
         }
-        //6 p -> Dp
+        //println!("--------//6 calculate maximal difference {}", max_difference);
+        //output_all_matrixes(&&abos_mutable, &abos_immutable);
+
+        //7 p -> Dp
         abos_mutable.dp.copy_from(&abos_mutable.p);
-        per_parts_constant_interpolation(&mut abos_mutable, &abos_immutable);
-        //7 tension lin ten smoothing
-        tension_loop(&mut abos_mutable, &abos_immutable);
-        linear_tension_loop(&mut abos_mutable, &abos_immutable);
-        //smoothing_loop(&mut abos_mutable, &abos_immutable);
-        //8 p + dp -> P
-        abos_mutable.p += &abos_mutable.dp;
-        //back to 4
+        //println!("--------//7 p -> Dp");
+        //output_all_matrixes(&&abos_mutable, &abos_immutable);
     }
-    // output_all_matrixes(&&abos_mutable, &abos_immutable);
+    output_all_matrixes(&&abos_mutable, &abos_immutable);
 }
 
 fn calculate_dz(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
@@ -250,7 +272,7 @@ fn calculate_dz(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) 
         let mut y_index_up: usize = y_index_down + 1;
         let value_index_percentage_y: f64 = y_index - y_index_down as f64;
 
-        let p = &abos_mutable.p;
+        
 
         if y_index_up == (abos_immutable.j1 as usize) {
             y_index_up -= 1;
@@ -258,6 +280,7 @@ fn calculate_dz(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) 
         if x_index_up == (abos_immutable.x1 as usize) {
             x_index_up -= 1;
         }
+        let p = &abos_mutable.p;
         let mut corners = (0.0, 0.0, 0.0, 0.0);
         unsafe {
             corners.0 = *p.get_unchecked((x_index_down, y_index_down));
@@ -429,31 +452,36 @@ fn linear_tension_cell(
 ) -> f64 {
     // println!("q {} u  {} v {}", q, u, v);
     let p = &abos_mutable.p;
-    let (top_l, top_l_b) = if (ii + u) >= p.nrows() as usize || (jj + v) >= p.ncols() {
-        (0.0, 0.0)
+    let top_l = if (ii + u) >= p.nrows() as usize || (jj + v) >= p.ncols() {
+        0.0
     } else {
-        unsafe { (*p.get_unchecked((ii + u, jj + v)), 1.0) }
+        //unsafe { *p.get_unchecked((ii + u, jj + v)) }
+        unsafe { *abos_mutable.p.get_unchecked((ii + u, jj + v)) }
     };
 
-    let (bot_r, bot_r_b) = if (ii as i32 - u as i32) < 0 || (jj as i32 - v as i32) < 0 {
-        (0.0, 0.0)
+    let bot_r = if (ii as i32 - u as i32) < 0 || (jj as i32 - v as i32) < 0 {
+        0.0
     } else {
-        unsafe { (*p.get_unchecked((ii - u, jj - v)), 1.0) }
+        //unsafe { *p.get_unchecked((ii - u, jj - v)) }
+        unsafe { *abos_mutable.p.get_unchecked((ii - u, jj - v)) }
     };
 
-    let (top_r, top_r_b) = if (ii as i32 - u as i32) < 0 || jj + v >= p.ncols() {
-        (0.0, 0.0)
+    let top_r = if (ii as i32 - u as i32) < 0 || jj + v >= p.ncols() {
+        0.0
     } else {
-        unsafe { (*p.get_unchecked((ii - u, jj + v)), 1.0) }
+        //unsafe { *p.get_unchecked((ii - u, jj + v))}
+        unsafe { *abos_mutable.p.get_unchecked((ii - u, jj + v))}
     };
 
-    let (bot_l, bot_l_b) = if ii + u >= p.nrows() as usize || (jj as i32 - v as i32) < 0 {
-        (0.0, 0.0)
+    let bot_l = if ii + u >= p.nrows() as usize || (jj as i32 - v as i32) < 0 {
+        0.0
     } else {
-        unsafe { (*p.get_unchecked((ii + u, jj - v)), 1.0) }
+        //unsafe { *p.get_unchecked((ii + u, jj - v))}
+        unsafe { *abos_mutable.p.get_unchecked((ii + u, jj - v))}
     };
-    let bottom_divider = (q * top_l_b) + (q * top_r_b) + bot_l_b + bot_r_b;
-
+    //code was
+    //let bottom_divider = (q * top_l_b) + (q * top_r_b) + bot_l_b + bot_r_b;
+    let bottom_divider = 2.0 * q + 2.0 * abos_immutable.r as f64;
     if bottom_divider == 0.0 {
         -INFINITY
     } else {
@@ -480,6 +508,7 @@ pub fn linear_tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOS
                     abos_mutable,
                 );
                 if new_p != -INFINITY {
+  
                     unsafe {
                         *abos_mutable.p.get_unchecked_mut((ii, jj)) = new_p;
                     }
@@ -501,29 +530,25 @@ fn get_q_linear_tension(abos_immutable: &ABOSImmutable, k_i_j: usize) -> f64 {
 //tt : midpoint, checking window from
 //dt : amount to look above below
 //min_i : minimum acceptable value, inclusive
-//max_i  : maximum acceptable value inclusive
+//max_i  : maximum acceptable value exclusive
 // returns (tt - dt, tt + dt) pending on min_t, max_t
 pub fn get_valid_dim_bounds(tt: usize, dt: usize, min_t: usize, max_t: usize) -> (usize, usize) {
-    let lower_bound = if tt < dt {
-        min_t
-    } else if tt - dt < min_t {
-        //JACOB THERE IS A LOGIC ERROR HERE
-        min_t
-    } else {
-        tt - dt
-    };
-    let upper_bound = if tt + dt > max_t { max_t } else { tt + dt };
+    //cast to i32 to handle negative which doesn't jive with usize
+    let lower_bound = if (tt as i32 - dt as i32) < min_t as i32 {
+        min_t } else { tt - dt};
+    let upper_bound = if tt + dt >= max_t { max_t - 1} else { tt + dt };
     (lower_bound, upper_bound)
 }
 
 pub fn set_t_smooth(abos_mutable: &mut ABOSMutable) {
     //Set initial tt matrix
     for (ii, row) in abos_mutable.p.row_iter().enumerate() {
-        let (kk_min, kk_max) = get_valid_dim_bounds(ii, 2, 0, abos_mutable.p.nrows() - 1);
+        let (kk_min, kk_max) = get_valid_dim_bounds(ii, 2, 0, abos_mutable.p.nrows());
         for (jj, _col) in row.iter().enumerate() {
-            let (ll_min, ll_max) = get_valid_dim_bounds(jj, 2, 0, abos_mutable.p.ncols() - 1);
+            let (ll_min, ll_max) = get_valid_dim_bounds(jj, 2, 0, abos_mutable.p.ncols());
             //println!("kk_max {} kk_min {} ll_max {} ll_min {} ", kk_max, kk_min, ll_max, ll_min);
             let num_cells = ((kk_max - kk_min + 1) * (ll_max - ll_min + 1)) as f64;
+            
             //.slice(start, shape)
             let mut pij_resid_sum = abos_mutable
                 .p
@@ -537,16 +562,19 @@ pub fn set_t_smooth(abos_mutable: &mut ABOSMutable) {
         }
     }
 
-    //scale t_smooth matrix to between 0 to 100
+    //scale t_smooth matrix to between 0 to 1.0, variation on published method
     let min_t = abos_mutable.t_smooth.min();
     let dt = abos_mutable.t_smooth.max() - min_t;
-    abos_mutable.t_smooth.apply(|x| (x - min_t) * 100.0 / dt);
+    abos_mutable.t_smooth.apply(|x| (x - min_t) * 1.0 / dt);
+
 }
 
 pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
     let n = cmp::max(4, abos_immutable.k_max * abos_immutable.k_max / 16);
 
     for _n_countdown in (1..n + 1).rev() {
+        //t , are weights, which are zero before the first smoothing and afterwards they are computed according to the formula
+        // abos_mutable.t_smooth.fill(0.0);
         set_t_smooth(abos_mutable);
         for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
             let (kk_min, kk_max) = get_valid_dim_bounds(ii, 1, 0, abos_mutable.p.nrows() - 1);
@@ -563,13 +591,15 @@ pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmut
                         * abos_immutable.q_smooth
                         * (*abos_mutable.p.get_unchecked((ii, jj)))
                         * (*abos_mutable.t_smooth.get_unchecked((ii, jj)) - 1.0);
+                    //num_cells - 1.0 inferred from case of equation 2.2.7
                     pij_new /= abos_immutable.q_smooth
                         * (*abos_mutable.t_smooth.get_unchecked((ii, jj)))
-                        + 8.0;
+                        + (num_cells - 1.0);
                     *abos_mutable.p.get_unchecked_mut((ii, jj)) = pij_new;
                 }
             }
         }
+        
     }
 }
 
