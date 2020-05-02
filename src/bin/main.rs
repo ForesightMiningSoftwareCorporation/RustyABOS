@@ -1,26 +1,27 @@
-use abos::{abos_run,ABOSInputs};
+use abos::abos_run;
+use abos::abos_structs::ABOSInputs;
+
 extern crate rand;
 //use rand::prelude::*;
 
 fn main() {
-    
     let mut points: Vec<Vec<f64>> = vec![];
-    for ii in 0..3 {
+    for ii in 0..100 {
         //making f64 then converting seemse better than casting f64 3 times
         let iif = 1.0 + ii as f64;
-        let new_point:Vec<f64> = vec!(iif , iif*2.0, iif*3.0);
+        let new_point: Vec<f64> = vec![iif, iif * 2.0, iif * 3.0];
         //let new_point:Vec<f64> = vec!(ii , (ii*2) as f64, (ii*3) as f64);
         points.push(new_point);
     }
 
-    let inputs = ABOSInputs{
+    let inputs = ABOSInputs {
         degree: 0,
-        filter: 20.0,
+        filter: 200.0,
         points,
         q_smooth: 0.5,
     };
-    
-    println!("inputs.points {:?}", inputs.points);
+
+    //println!("inputs.points {:?}", inputs.points);
 
     abos_run(&inputs);
 
@@ -29,4 +30,3 @@ fn main() {
     //
     // test.output_all_matrixes();
 }
-
