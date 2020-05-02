@@ -138,7 +138,7 @@ pub fn init_distance_point_matrixes_kdi(
         }
     }
 
-    // println!("{:?}", abos_immutable.k_u_v);
+    // println!("{}", abos_immutable.nb);
 }
 
 //
@@ -167,7 +167,9 @@ fn initialize_kdtree_from_matrix(
     let mut kdtree = KdTree::new(2);
     // let mut points:Vec<([f64; 2], usize)> = vec![];
     for (i, row) in xyz_points.row_iter().enumerate() {
-        kdtree.add([row[0], row[1]], i).unwrap();
+        let x_position = row[0];
+        let y_position = row[1];
+        kdtree.add([x_position, y_position], i).unwrap();
     }
     kdtree
 }
@@ -205,14 +207,14 @@ fn get_min_chebyshev_distance_kdi(
 
     for row in xyz_points.row_iter() {
         let point = [row[0], row[1]];
-        let kd_search_result = kdtree.nearest(&point, 2, &squared_euclidean).unwrap();
-        let closest_index = *kd_search_result[1].1;
+        let kd_search_result = kdtree.nearest(&point, 1, &squared_euclidean).unwrap();
+        let closest_index = *kd_search_result[0].1;
         let distances: MatrixMN<f64, U1, U3> = row.clone_owned() - xyz_points.row(closest_index);
         let distances = distances.abs();
         let max_xy_distance = if distances[0] > distances[1] {
-            distances[0]
+            distances[0] + 1.0
         } else {
-            distances[1]
+            distances[1] + 1.0
         };
 
         if max_xy_distance < min_chebyshev_distance {
