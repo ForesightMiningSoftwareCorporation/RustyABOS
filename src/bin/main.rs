@@ -15,7 +15,7 @@ fn main() {
     }
 
     let inputs = ABOSInputs {
-        degree: 0,
+        linear_tensioning_degree: 0,
         filter: 100.0,
         points,
         q_smooth: 0.5,

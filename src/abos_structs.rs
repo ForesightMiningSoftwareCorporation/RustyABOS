@@ -6,7 +6,7 @@ pub const INFINITY: f64 = 1.0f64 / 0.0f64;
 
 pub struct ABOSInputs {
     //User Inputs
-    pub degree: i8,
+    pub linear_tensioning_degree: i8,
     pub filter: f64,
     //INPUT resolution parameter
     pub points: Vec<Vec<f64>>,

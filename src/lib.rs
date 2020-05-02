@@ -3,9 +3,11 @@
 ///
 extern crate approx;
 extern crate nalgebra as na;
+
 mod abos_constructor;
 pub mod abos_structs;
 mod io_system;
+
 use crate::abos_constructor::new_abos;
 use crate::abos_structs::{ABOSImmutable, ABOSInputs, ABOSMutable, INFINITY};
 use crate::io_system::export_p_matrix;
@@ -46,17 +48,20 @@ pub fn abos_run(abos_inputs: &ABOSInputs) {
 
         //3 Tensioning and smoothing of the matrix P
         tension_loop(&mut abos_mutable, &abos_immutable);
-        println!("{:.1}", abos_mutable.p);
+
         export_p_matrix(&&abos_mutable, &abos_immutable, "afterTension");
         //println!("--------//3 tensioning");
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
 
-        //linear_tension_loop(&mut abos_mutable, &abos_immutable);
+        linear_tension_loop(&mut abos_mutable, &abos_immutable);
         export_p_matrix(&&abos_mutable, &abos_immutable, "afterLinearTension");
+
         //println!("--------//3 linear tensioning");
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
 
-        //smoothing_loop(&mut abos_mutable, &abos_immutable);
+        smoothing_loop(&mut abos_mutable, &abos_immutable);
+        export_p_matrix(&&abos_mutable, &abos_immutable, "afterSmoothing");
+        println!("{:.1}", abos_mutable.p);
         //println!("--------//3 smoothing");
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
 
@@ -231,38 +236,35 @@ fn linear_tension_cell(
     abos_immutable: &ABOSImmutable,
     abos_mutable: &mut ABOSMutable,
 ) -> f64 {
-    // println!("q {} u  {} v {}", q, u, v);
     let p = &abos_mutable.p;
-    let top_l = if (ii + u) >= p.nrows() as usize || (jj + v) >= p.ncols() {
-        0.0
+    let (top_l, top_l_b) = if (ii + u) >= p.nrows() as usize || (jj + v) >= p.ncols() {
+        (0.0, 0.0)
     } else {
-        //unsafe { *p.get_unchecked((ii + u, jj + v)) }
-        unsafe { *abos_mutable.p.get_unchecked((ii + u, jj + v)) }
+        unsafe { (*p.get_unchecked((ii + u, jj + v)), 1.0) }
     };
 
-    let bot_r = if (ii as i32 - u as i32) < 0 || (jj as i32 - v as i32) < 0 {
-        0.0
+    let (bot_r, bot_r_b) = if (ii as i32 - u as i32) < 0 || (jj as i32 - v as i32) < 0 {
+        (0.0, 0.0)
     } else {
-        //unsafe { *p.get_unchecked((ii - u, jj - v)) }
-        unsafe { *abos_mutable.p.get_unchecked((ii - u, jj - v)) }
+        unsafe { (*p.get_unchecked((ii - u, jj - v)), 1.0) }
     };
 
-    let top_r = if (ii as i32 - u as i32) < 0 || jj + v >= p.ncols() {
-        0.0
+    let (top_r, top_r_b) = if (ii as i32 - u as i32) < 0 || jj + v >= p.ncols() {
+        (0.0, 0.0)
     } else {
-        //unsafe { *p.get_unchecked((ii - u, jj + v))}
-        unsafe { *abos_mutable.p.get_unchecked((ii - u, jj + v)) }
+        unsafe { (*p.get_unchecked((ii - u, jj + v)), 1.0) }
     };
 
-    let bot_l = if ii + u >= p.nrows() as usize || (jj as i32 - v as i32) < 0 {
-        0.0
+    let (bot_l, bot_l_b) = if ii + u >= p.nrows() as usize || (jj as i32 - v as i32) < 0 {
+        (0.0, 0.0)
     } else {
-        //unsafe { *p.get_unchecked((ii + u, jj - v))}
-        unsafe { *abos_mutable.p.get_unchecked((ii + u, jj - v)) }
+        unsafe { (*p.get_unchecked((ii + u, jj - v)), 1.0) }
     };
-    //code was
-    //let bottom_divider = (q * top_l_b) + (q * top_r_b) + bot_l_b + bot_r_b;
-    let bottom_divider = 2.0 * q + 2.0 * abos_immutable.r as f64;
+    let bottom_divider = (q * top_l_b)
+        + (q * bot_r_b)
+        + top_r_b * abos_immutable.r as f64
+        + bot_l_b * abos_immutable.r as f64;
+
     if bottom_divider == 0.0 {
         -INFINITY
     } else {
@@ -272,10 +274,10 @@ fn linear_tension_cell(
 }
 
 pub fn linear_tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
-    let n = 1; // cmp::min(4, abos_immutable.k_max / 2 + 2); //TODO SWITCH BACK
-    for n_countdown in (1..n + 1).rev() {
-        for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
-            for (jj, col) in row.iter().enumerate() {
+    let n = cmp::min(4, abos_immutable.k_max / 2 + 2); //TODO SWITCH BACK
+    for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
+        for (jj, col) in row.iter().enumerate() {
+            for n_countdown in (1..n + 1).rev() {
                 let k_i_j_mod = cmp::min(col.0, n_countdown);
                 let q = get_q_linear_tension(abos_immutable, k_i_j_mod);
                 let (u_mod, v_mod) = get_scaled_u_v(col.1 as f64, col.2 as f64, n as f64);
@@ -351,12 +353,12 @@ pub fn set_t_smooth(abos_mutable: &mut ABOSMutable) {
 }
 
 pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
-    let n = cmp::max(4, abos_immutable.k_max * (abos_immutable.k_max / 16));
+    let n = 1; // cmp::max(4, abos_immutable.k_max * (abos_immutable.k_max / 16));
 
+    //t , are weights, which are zero before the first smoothing and afterwards they are computed according to the formula
+    // abos_mutable.t_smooth.fill(0.0);
+    set_t_smooth(abos_mutable);
     for n_countdown in (1..n + 1).rev() {
-        //t , are weights, which are zero before the first smoothing and afterwards they are computed according to the formula
-        // abos_mutable.t_smooth.fill(0.0);
-        set_t_smooth(abos_mutable);
         for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
             for (jj, col) in row.iter().enumerate() {
                 let k_i_j = col.0;
@@ -367,20 +369,25 @@ pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmut
                         get_valid_dim_bounds(jj, 1, 0, abos_mutable.p.ncols() - 1);
 
                     let num_cells = ((kk_max - kk_min + 1) * (ll_max - ll_min + 1)) as f64; //TODO THIS IS DECREMENTING THE TOTAL VALUE OF THE GRID
-                    let mut pij_new = abos_mutable
-                        .p
-                        .slice((kk_min, ll_min), (kk_max - kk_min, ll_max - ll_min))
-                        .sum();
+
+                    let mut p_i_j_val: f64 = -INFINITY;
+                    let mut t_i_j_val: f64 = -INFINITY;
                     unsafe {
-                        pij_new += num_cells
-                            * abos_immutable.q_smooth
-                            * (*abos_mutable.p.get_unchecked((ii, jj)))
-                            * (*abos_mutable.t_smooth.get_unchecked((ii, jj)) - 1.0);
-                        //num_cells - 1.0 inferred from case of equation 2.2.7
-                        pij_new /= abos_immutable.q_smooth
-                            * (*abos_mutable.t_smooth.get_unchecked((ii, jj)))
-                            + (num_cells);
-                        *abos_mutable.p.get_unchecked_mut((ii, jj)) = pij_new;
+                        p_i_j_val = *abos_mutable.p.get_unchecked((ii, jj));
+                        t_i_j_val = *abos_mutable.t_smooth.get_unchecked((ii, jj));
+                    }
+                    let sum_p_k_l = abos_mutable
+                        .p
+                        .slice((kk_min, ll_min), (kk_max + 1 - kk_min, ll_max + 1 - ll_min))
+                        .sum();
+                    let right_modified =
+                        p_i_j_val * num_cells * (abos_immutable.q_smooth * t_i_j_val - 1.0);
+
+                    let new_p_i_j =
+                        (sum_p_k_l * t_i_j_val) / num_cells + right_modified / num_cells;
+
+                    unsafe {
+                        *abos_mutable.p.get_unchecked_mut((ii, jj)) = new_p_i_j;
                     }
                 }
             }

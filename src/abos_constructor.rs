@@ -50,7 +50,7 @@ pub fn new_abos(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
     );
 
     let mut abos_immutable = ABOSImmutable {
-        degree: abos_inputs.degree,
+        degree: abos_inputs.linear_tensioning_degree,
         r,
         l,
         xyz_points, //INPUT all points XYZ
@@ -91,7 +91,7 @@ pub fn new_abos(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
     };
 
     init_distance_point_matrixes_kdi(&mut abos_immutable, &abos_mutable, &kdtree);
-    let (r, l) = compute_rl(abos_inputs.degree, abos_immutable.k_max);
+    let (r, l) = compute_rl(abos_inputs.linear_tensioning_degree, abos_immutable.k_max);
     abos_immutable.r = r;
     abos_immutable.l = l;
 
