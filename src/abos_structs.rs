@@ -44,7 +44,7 @@ pub struct ABOSImmutable {
     pub(crate) _z2: f64,
     //max z
     //ABOS Calculated Parameters
-    pub(crate) dmc: f64,
+    pub(crate) _dmc: f64,
     /// TODO WHAT IS THIS FOR??
     //minimal chebyshev distance
     pub(crate) i1: i32,

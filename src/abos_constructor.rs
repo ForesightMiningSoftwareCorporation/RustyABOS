@@ -60,7 +60,7 @@ pub fn new_abos(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
         y2,         //maxy
         _z1: z1,    //min z
         _z2: z2,    //max z
-        dmc,        //minimal chebyshev distance
+        _dmc: dmc,  //minimal chebyshev distance
         i1,         //xsize of grid
         j1,         //ysize of grid
         dx,         //size of grid on x

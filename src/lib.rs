@@ -8,7 +8,7 @@ pub mod abos_structs;
 mod io_system;
 use crate::abos_constructor::new_abos;
 use crate::abos_structs::{ABOSImmutable, ABOSInputs, ABOSMutable, INFINITY};
-use na::{DVector, Dim, Dynamic, MatrixMN, U1, U3};
+use crate::io_system::export_p_matrix;
 use std::cmp;
 
 //iteration cycle
@@ -34,7 +34,9 @@ pub fn abos_run(abos_inputs: &ABOSInputs) {
     println!("--------//1 Initialization");
     output_all_matrixes(&&abos_mutable, &abos_immutable);
 
-    loop {
+    let mut n = 1;
+    while n > 0 {
+        n -= 1;
         //2 Per partes constant interpolation of values DZ into the matrix P
         per_parts_constant_interpolation(&mut abos_mutable, &abos_immutable);
         //println!("--------//2 Per partes constant interpolation of values DZ into the matrix P");
@@ -45,16 +47,17 @@ pub fn abos_run(abos_inputs: &ABOSInputs) {
         //println!("--------//3 tensioning");
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
 
-        linear_tension_loop(&mut abos_mutable, &abos_immutable);
+        //linear_tension_loop(&mut abos_mutable, &abos_immutable);
         //println!("--------//3 linear tensioning");
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
 
-        smoothing_loop(&mut abos_mutable, &abos_immutable);
+        //smoothing_loop(&mut abos_mutable, &abos_immutable);
         //println!("--------//3 smoothing");
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
 
         //4 p + dp -> P
         abos_mutable.p += &abos_mutable.dp;
+        export_p_matrix(&&abos_mutable, &abos_immutable);
         //println!("--------//4 p + dp -> P");
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
         //back to 4
