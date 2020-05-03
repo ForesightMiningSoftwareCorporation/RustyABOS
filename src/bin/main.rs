@@ -6,7 +6,7 @@ extern crate rand;
 
 fn main() {
     let mut points: Vec<Vec<f64>> = vec![];
-    for ii in 0..2 {
+    for ii in 0..3 {
         //making f64 then converting seemse better than casting f64 3 times
         let iif = 1.0 + ii as f64;
         let new_point: Vec<f64> = vec![iif, iif * 2.0, iif * 3.0];

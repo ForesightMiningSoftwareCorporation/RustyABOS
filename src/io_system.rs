@@ -18,16 +18,16 @@ pub fn export_p_matrix(abos_mutable: &ABOSMutable, abos_immutable: &ABOSImmutabl
     // Write the `LOREM_IPSUM` string to `file`, returns `io::Result<()>`
 
     //
-    let yMin = abos_immutable.y1;
-    let xMin = abos_immutable.x1;
-    let yMax = abos_immutable.y2;
-    let xMax = abos_immutable.x2;
-    let nCol = abos_immutable.i1 - 1;
-    let nRow = abos_immutable.j1 - 1;
+    let y_min = abos_immutable.y1;
+    let x_min = abos_immutable.x1;
+    let y_max = abos_immutable.y2;
+    let x_max = abos_immutable.x2;
+    let n_col = abos_immutable.i1 - 1;
+    let n_row = abos_immutable.j1 - 1;
     //
     let mut string_to_write = format!(
         "{}\r\n{}\r\n{}\r\n{}\r\n{}\r\n{}\r\n",
-        yMin, xMin, yMax, xMax, nCol, nRow
+        y_min, x_min, y_max, x_max, n_col, n_row
     );
 
     for (_, col) in abos_mutable.p.column_iter().enumerate() {

@@ -4,6 +4,8 @@ use crate::abos_structs::{ABOSImmutable, ABOSInputs, ABOSMutable, INFINITY};
 use kdtree::distance::squared_euclidean;
 use kdtree::KdTree;
 use nalgebra::{DMatrix, DVector, Dim, Dynamic, MatrixMN, U1, U3};
+use std::collections::BTreeSet; // used in point filtering
+
 
 pub fn new_abos(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
     //unwrapping to 1d vector [x1, y1, z1, x2, y2, z2...]
@@ -20,24 +22,25 @@ pub fn new_abos(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
     //step 2: get Point range information and swap as necessary
     let (x1, x2, y1, y2, z1, z2, xy_swaped) = swap_and_get_ranges(&mut xyz_points);
 
-    let kdtree = initialize_kdtree_from_matrix(&xyz_points);
+    let mut kdtree = initialize_kdtree_from_matrix(&xyz_points);
     //step 3: get Chebyshev distance
     let dmc = get_min_chebyshev_distance_kdi(&xyz_points, &kdtree);
-    //step 3: get the grid dimensions
+    //step 4: get the grid dimensions and resolution
     let (i1, j1, dx, dy) = compute_grid_dimensions(x1, x2, y1, y2, dmc, abos_inputs.filter);
+    let res_x = (x2 - x1) / abos_inputs.filter;
+    let res_y = (y2 - y1) / abos_inputs.filter;
+    let rs = if res_x > res_y { res_x } else { res_y };
 
-    //step 4: Create empty vectors
+    filter_points_kd(&mut xyz_points, &mut kdtree, rs);
+
+    //Create empty vectors
     let nb: MatrixMN<usize, Dynamic, Dynamic> = MatrixMN::from_element_generic(
         Dynamic::from_usize(i1 as usize),
         Dynamic::from_usize(j1 as usize),
         0,
     );
-    // Pcontainer.matrix::
-    let z: DVector<f64> = xyz_points.column(2).clone_owned();
 
-    let res_x = (x2 - x1) / abos_inputs.filter;
-    let res_y = (y2 - y1) / abos_inputs.filter;
-    let rs = if res_x > res_y { res_x } else { res_y };
+    let z: DVector<f64> = xyz_points.column(2).clone_owned();
 
     // These items must be calculated with calculated k_max
     let r = 0;
@@ -60,7 +63,6 @@ pub fn new_abos(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
         y2,         //maxy
         _z1: z1,    //min z
         _z2: z2,    //max z
-        _dmc: dmc,  //minimal chebyshev distance
         i1,         //xsize of grid
         j1,         //ysize of grid
         dx,         //size of grid on x
@@ -69,8 +71,7 @@ pub fn new_abos(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
         nb, // Matrix of nearest points on grid. Containing indexes to nearest point in the XYZ array
         k_u_v, // Grid distance of each grid to the point indexed in nb
         k_max: 0, //maximal element of matrix k
-        _rs: rs, // Resolution of map
-        _xy_swaped: xy_swaped,
+        xy_swaped: xy_swaped,
         q_smooth: abos_inputs.q_smooth,
     };
 
@@ -145,7 +146,7 @@ pub fn init_distance_point_matrixes_kdi(
 // //Make D matrix
 // //unwrapping to 1d vector [x1, y1, z1, x2, y2, z2...]
 // //real function call would just pass the vector into DMatrix
-fn initialize_dmatrix(points: &[Vec<f64>]) -> MatrixMN<f64, Dynamic, U3> {
+pub fn initialize_dmatrix(points: &[Vec<f64>]) -> MatrixMN<f64, Dynamic, U3> {
     let mut vec = Vec::new();
     for point in points.iter() {
         for ii in point.iter() {
@@ -161,7 +162,7 @@ fn initialize_dmatrix(points: &[Vec<f64>]) -> MatrixMN<f64, Dynamic, U3> {
     xyz_points
 }
 
-fn initialize_kdtree_from_matrix(
+pub fn initialize_kdtree_from_matrix(
     xyz_points: &MatrixMN<f64, Dynamic, U3>,
 ) -> KdTree<f64, usize, [f64; 2]> {
     let mut kdtree = KdTree::new(2);
@@ -199,7 +200,7 @@ pub fn swap_and_get_ranges(
 }
 
 //
-fn get_min_chebyshev_distance_kdi(
+pub fn get_min_chebyshev_distance_kdi(
     xyz_points: &MatrixMN<f64, Dynamic, U3>,
     kdtree: &KdTree<f64, usize, [f64; 2]>,
 ) -> f64 {
@@ -207,10 +208,13 @@ fn get_min_chebyshev_distance_kdi(
 
     for row in xyz_points.row_iter() {
         let point = [row[0], row[1]];
-        let kd_search_result = kdtree.nearest(&point, 1, &squared_euclidean).unwrap();
-        let closest_index = *kd_search_result[0].1;
+        let kd_search_result = kdtree.nearest(&point, 2, &squared_euclidean).unwrap();
+        let closest_index = *kd_search_result[1].1;
         let distances: MatrixMN<f64, U1, U3> = row.clone_owned() - xyz_points.row(closest_index);
         let distances = distances.abs();
+
+        println!("distances[0] {}, distances[1] {}", distances[0], distances[1]);
+
         let max_xy_distance = if distances[0] > distances[1] {
             distances[0] + 1.0
         } else {
@@ -260,7 +264,7 @@ pub fn compute_grid_dimensions(
 }
 
 //
-fn compute_rl(degree: i8, k_max: usize) -> (usize, f64) {
+pub fn compute_rl(degree: i8, k_max: usize) -> (usize, f64) {
     //println!();
     match degree {
         0 => {
@@ -285,4 +289,44 @@ fn compute_rl(degree: i8, k_max: usize) -> (usize, f64) {
         }
         _ => (0, 0.0),
     }
+}
+
+//If points are within the RS term will average them together
+//Will create new point and kdtree with filtered points and set old points and kdtree to new version
+//with kd tree grab the two nearest neigbors as self is included
+pub fn filter_points_kd(
+    points: &mut MatrixMN<f64, Dynamic, U3>,
+    kdtree: &mut KdTree<f64, usize, [f64; 2]>,
+    rs: f64
+){
+    let mut points_filtered: Vec<Vec<f64>> = vec![];
+    let mut skip_index = BTreeSet::new();
+    for (ii, row) in points.row_iter().enumerate() {
+        //Don't do analysis for indexes already accounted for
+        if skip_index.contains(&ii) {
+            skip_index.remove(&ii);
+            continue;
+        }
+
+        let point = [row[0], row[1]];
+        let kd_search_result = kdtree.nearest(&point, 2, &squared_euclidean).unwrap();
+        let closest_index = *kd_search_result[1].1;
+        let distances: MatrixMN<f64, U1, U3> = row.clone_owned() - points.row(closest_index);
+        let distances = distances.abs();
+
+        let mut new_point: Vec<f64> = vec![row[0], row[1], row[2]]; //iif * 3.0
+        
+        if distances[0] < rs && distances[1] < rs{
+            println!("distances[0] {}, distances[1] {}", distances[0], distances[1]);
+            unsafe {
+                new_point[0] = (row[0] + points.get_unchecked((ii, 0)) ) / 2.0;
+                new_point[1] = (row[1] + points.get_unchecked((ii, 1)) ) / 2.0;
+                new_point[2] = (row[2] + points.get_unchecked((ii, 2)) ) / 2.0;
+            }
+            skip_index.insert(closest_index);
+        }
+        points_filtered.push(new_point);
+    }
+    *points = initialize_dmatrix(&points_filtered);
+    *kdtree = initialize_kdtree_from_matrix(points);
 }

@@ -26,7 +26,7 @@ use std::cmp;
 // 7. P→DP, continue from step 2 again (= start the next iteration cycle)
 
 pub fn abos_run(abos_inputs: &ABOSInputs) {
-    //1 Initialization
+    //1 Filtering points XYZ, specification of the grid, computation of the matrices NB and K, Z→DZ, 0→DP
     let (abos_immutable, mut abos_mutable) = new_abos(&abos_inputs);
     // //Calculates k_u_v and kmax
     println!(
@@ -35,8 +35,8 @@ pub fn abos_run(abos_inputs: &ABOSInputs) {
         abos_immutable.j1,
         abos_immutable.xyz_points.len() / 3
     );
-    println!("--------//1 Initialization");
-    output_all_matrixes(&&abos_mutable, &abos_immutable);
+    //println!("--------//1 Initialization");
+    //output_all_matrixes(&&abos_mutable, &abos_immutable);
     calculate_dz(&mut abos_mutable, &abos_immutable);
 
     let mut n = 1000;
@@ -95,7 +95,12 @@ pub fn abos_run(abos_inputs: &ABOSInputs) {
         //println!("--------//7 p -> Dp");
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
     }
+
     output_all_matrixes(&&abos_mutable, &abos_immutable);
+    //Initialization will swap so greater number of rows than cols
+    if abos_immutable.xy_swaped {
+        abos_mutable.p.swap_columns(0, 1);
+    }
 }
 
 fn calculate_dz(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
@@ -316,14 +321,20 @@ fn get_q_linear_tension(abos_immutable: &ABOSImmutable, k_i_j: usize) -> f64 {
 //dt : amount to look above below
 //min_i : minimum acceptable value, inclusive
 //max_i  : maximum acceptable value exclusive
-// returns (tt - dt, tt + dt) pending on min_t, max_t
+// returns (min_bound, max_bound)  both inclusive indexes
+// where min_bound = tt-dt || min_t
+// where max_bound = tt+dt || max_t - 1
 pub fn get_valid_dim_bounds(tt: usize, dt: usize, min_t: usize, max_t: usize) -> (usize, usize) {
     let lower_bound = if tt < dt || tt - dt < min_t {
-        min_t
-    } else {
-        tt - dt
-    };
-    let upper_bound = if tt + dt > max_t { max_t } else { tt + dt };
+            min_t
+        } else {
+            tt - dt
+        };
+    let upper_bound = if tt + dt >= max_t { 
+            max_t - 1
+        } else { 
+            tt + dt 
+        };
     (lower_bound, upper_bound)
 }
 
@@ -333,15 +344,13 @@ pub fn set_t_smooth(abos_mutable: &mut ABOSMutable) {
         let (kk_min, kk_max) = get_valid_dim_bounds(ii, 2, 0, abos_mutable.p.nrows());
         for (jj, _col) in row.iter().enumerate() {
             let (ll_min, ll_max) = get_valid_dim_bounds(jj, 2, 0, abos_mutable.p.ncols());
-            //println!("kk_max {} kk_min {} ll_max {} ll_min {} ", kk_max, kk_min, ll_max, ll_min);
-            let num_cells = ((kk_max - kk_min + 1) * (ll_max - ll_min + 1)) as f64;
-
+            let num_cells = ((1 + kk_max - kk_min) * (1 + ll_max - ll_min)) as f64;
+            //println!("ii {}, jj {},  kk_min {}, kk_max {}, ll_min {}, ll_max{}, nrows {}, ncols {}", ii, jj, kk_min, kk_max, ll_min, ll_max, abos_mutable.p.nrows(), abos_mutable.p.ncols());
             //.slice(start, shape)
             let mut pij_resid_sum = abos_mutable
                 .p
-                .slice((kk_min, ll_min), (kk_max - kk_min, ll_max - ll_min))
+                .slice((kk_min, ll_min), (kk_max - kk_min + 1, ll_max - ll_min + 1)) //(kk_max - kk_min + 1, ll_max - ll_min + 1)
                 .sum();
-
             unsafe {
                 pij_resid_sum -= num_cells * (*abos_mutable.p.get_unchecked((ii, jj)));
                 *abos_mutable.t_smooth.get_unchecked_mut((ii, jj)) = pij_resid_sum * pij_resid_sum;
@@ -352,7 +361,9 @@ pub fn set_t_smooth(abos_mutable: &mut ABOSMutable) {
     //scale t_smooth matrix to between 0 to 1.0, variation on published method
     let min_t = abos_mutable.t_smooth.min();
     let dt = abos_mutable.t_smooth.max() - min_t;
-    abos_mutable.t_smooth.apply(|x| (x - min_t) * 1.0 / dt);
+    if dt > 0.0  {
+        abos_mutable.t_smooth.apply(|x| (x - min_t) * 1.0 / dt);
+    }
 }
 
 pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
@@ -367,9 +378,9 @@ pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmut
                 let k_i_j = col.0;
                 if k_i_j >= n_countdown {
                     let (kk_min, kk_max) =
-                        get_valid_dim_bounds(ii, 1, 0, abos_mutable.p.nrows() - 1);
+                        get_valid_dim_bounds(ii, 1, 0, abos_mutable.p.nrows());
                     let (ll_min, ll_max) =
-                        get_valid_dim_bounds(jj, 1, 0, abos_mutable.p.ncols() - 1);
+                        get_valid_dim_bounds(jj, 1, 0, abos_mutable.p.ncols());
 
                     let num_cells = ((kk_max - kk_min + 1) * (ll_max - ll_min + 1)) as f64; //TODO THIS IS DECREMENTING THE TOTAL VALUE OF THE GRID
 
@@ -381,7 +392,7 @@ pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmut
                     }
                     let sum_p_k_l = abos_mutable
                         .p
-                        .slice((kk_min, ll_min), (kk_max + 1 - kk_min, ll_max + 1 - ll_min))
+                        .slice((kk_min, ll_min), (kk_max - kk_min + 1, ll_max - ll_min + 1))
                         .sum();
                     let right_modified = p_i_j_val * (abos_immutable.q_smooth * t_i_j_val - 1.0);
 
@@ -397,13 +408,12 @@ pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmut
     }
 }
 
-pub fn output_all_matrixes(abos_mutable: &ABOSMutable, _abos_immutable: &ABOSImmutable) {
-    //println!("dmc {}", abos_immutable.dmc);
-    // println!(
-    //     "NB {:.1} Z{:.1} DZ{:.1} DP{:.1} P{:.1}",
-    //     abos_immutable.nb, abos_immutable.z, abos_mutable.dz, abos_mutable.dp, abos_mutable.p
-    // );
-    println!("{}", abos_mutable.p.len())
+pub fn output_all_matrixes(abos_mutable: &ABOSMutable, abos_immutable: &ABOSImmutable) {
+    println!(
+        "NB {:.1} Z{:.1} DZ{:.1} DP{:.1} P{:.1}",
+        abos_immutable.nb, abos_immutable.z, abos_mutable.dz, abos_mutable.dp, abos_mutable.p
+    );
+    //println!("{}", abos_mutable.p.len())
 }
 
 //

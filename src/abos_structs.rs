@@ -44,9 +44,6 @@ pub struct ABOSImmutable {
     pub(crate) _z2: f64,
     //max z
     //ABOS Calculated Parameters
-    pub(crate) _dmc: f64,
-    /// TODO WHAT IS THIS FOR??
-    //minimal chebyshev distance
     pub(crate) i1: i32,
     //xsize of grid
     pub(crate) j1: i32,
@@ -64,9 +61,7 @@ pub struct ABOSImmutable {
     // Grid distance of each grid to the point indexed in NB
     pub(crate) k_max: usize,
     //maximal element of matrix K
-    pub(crate) _rs: f64,
-    // Resolution of map
-    pub(crate) _xy_swaped: bool,
+    pub(crate) xy_swaped: bool,
     //whether the xy points were swapped
     pub(crate) q_smooth: f64,
     //user input smoothing parameter
