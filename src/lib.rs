@@ -30,38 +30,40 @@ pub fn abos_run(abos_inputs: &ABOSInputs) {
     let (abos_immutable, mut abos_mutable) = new_abos(&abos_inputs);
     // //Calculates k_u_v and kmax
     println!(
-        "x cells {} y cells {}",
-        abos_immutable.i1, abos_immutable.j1
+        "x cells {} y cells {} points {}",
+        abos_immutable.i1,
+        abos_immutable.j1,
+        abos_immutable.xyz_points.len() / 3
     );
     println!("--------//1 Initialization");
     output_all_matrixes(&&abos_mutable, &abos_immutable);
     calculate_dz(&mut abos_mutable, &abos_immutable);
 
-    let mut n = 1;
+    let mut n = 1000;
     while n > 0 {
         n -= 1;
         //2 Per partes constant interpolation of values DZ into the matrix P
         per_parts_constant_interpolation(&mut abos_mutable, &abos_immutable);
-        export_p_matrix(&&abos_mutable, &abos_immutable, "afterPpli");
+        //export_p_matrix(&&abos_mutable, &abos_immutable, "afterPpli");
         //println!("--------//2 Per partes constant interpolation of values DZ into the matrix P");
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
 
         //3 Tensioning and smoothing of the matrix P
         tension_loop(&mut abos_mutable, &abos_immutable);
 
-        export_p_matrix(&&abos_mutable, &abos_immutable, "afterTension");
+        //export_p_matrix(&&abos_mutable, &abos_immutable, "afterTension");
         //println!("--------//3 tensioning");
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
 
         linear_tension_loop(&mut abos_mutable, &abos_immutable);
-        export_p_matrix(&&abos_mutable, &abos_immutable, "afterLinearTension");
+        //export_p_matrix(&&abos_mutable, &abos_immutable, "afterLinearTension");
 
         //println!("--------//3 linear tensioning");
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
 
         smoothing_loop(&mut abos_mutable, &abos_immutable);
-        export_p_matrix(&&abos_mutable, &abos_immutable, "afterSmoothing");
-        println!("{:.1}", abos_mutable.p);
+        //export_p_matrix(&&abos_mutable, &abos_immutable, "afterSmoothing");
+        //println!("{:.1}", abos_mutable.p);
         //println!("--------//3 smoothing");
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
 
@@ -78,10 +80,11 @@ pub fn abos_run(abos_inputs: &ABOSInputs) {
         // abos_mutable.dz -= abos_mutable.p;
 
         //6 calculate maximal difference
-        export_p_matrix(&&abos_mutable, &abos_immutable, "beforeDZCheck");
+        //export_p_matrix(&&abos_mutable, &abos_immutable, "beforeDZCheck");
         let max_difference = abos_mutable.dz.max();
         println!("max_difference {}", max_difference);
-        if max_difference.abs() < 0.1 {
+        if max_difference.abs() < 0.000000001 {
+            export_p_matrix(&&abos_mutable, &abos_immutable, "exportConverged");
             break;
         }
         //println!("--------//6 calculate maximal difference {}", max_difference);
@@ -209,9 +212,9 @@ pub fn per_parts_constant_interpolation(
 
 pub fn tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
     let n = cmp::max(4, abos_immutable.k_max / 2 + 2); //TODO SWITCH BACK
-    for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
-        for (jj, col) in row.iter().enumerate() {
-            for n_countdown in (0..n).rev() {
+    for n_countdown in (0..n).rev() {
+        for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
+            for (jj, col) in row.iter().enumerate() {
                 let mut k_i_j_mod = col.0; //If  k  is greater than the decreasing loop variable N, then k = N.
                 if k_i_j_mod > (n_countdown + 1) {
                     k_i_j_mod = (n_countdown + 1);
@@ -275,9 +278,9 @@ fn linear_tension_cell(
 
 pub fn linear_tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
     let n = cmp::min(4, abos_immutable.k_max / 2 + 2); //TODO SWITCH BACK
-    for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
-        for (jj, col) in row.iter().enumerate() {
-            for n_countdown in (1..n + 1).rev() {
+    for n_countdown in (1..n + 1).rev() {
+        for (ii, row) in abos_immutable.k_u_v.row_iter().enumerate() {
+            for (jj, col) in row.iter().enumerate() {
                 let k_i_j_mod = cmp::min(col.0, n_countdown);
                 let q = get_q_linear_tension(abos_immutable, k_i_j_mod);
                 let (u_mod, v_mod) = get_scaled_u_v(col.1 as f64, col.2 as f64, n as f64);
@@ -353,7 +356,7 @@ pub fn set_t_smooth(abos_mutable: &mut ABOSMutable) {
 }
 
 pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
-    let n = 1; // cmp::max(4, abos_immutable.k_max * (abos_immutable.k_max / 16));
+    let n = cmp::max(4, abos_immutable.k_max * (abos_immutable.k_max / 16));
 
     //t , are weights, which are zero before the first smoothing and afterwards they are computed according to the formula
     // abos_mutable.t_smooth.fill(0.0);
@@ -380,11 +383,10 @@ pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmut
                         .p
                         .slice((kk_min, ll_min), (kk_max + 1 - kk_min, ll_max + 1 - ll_min))
                         .sum();
-                    let right_modified =
-                        p_i_j_val * num_cells * (abos_immutable.q_smooth * t_i_j_val - 1.0);
+                    let right_modified = p_i_j_val * (abos_immutable.q_smooth * t_i_j_val - 1.0);
 
-                    let new_p_i_j =
-                        (sum_p_k_l * t_i_j_val) / num_cells + right_modified / num_cells;
+                    let new_p_i_j = (sum_p_k_l + right_modified)
+                        / (num_cells - 1.0 + t_i_j_val * abos_immutable.q_smooth);
 
                     unsafe {
                         *abos_mutable.p.get_unchecked_mut((ii, jj)) = new_p_i_j;
