@@ -167,35 +167,17 @@ fn get_scaled_u_v(u: f64, v: f64, n: f64) -> (f64, f64) {
 fn tension_cell(ii: i32, jj: i32, k_i_j_mod: i32, abos_mutable: &mut ABOSMutable) -> f64 {
     //we need to get Pi , j=Pik , jPi , jkPi−k , jPi , j−k
     let p = &abos_mutable.p;
-    let min_i: i32 = ii - k_i_j_mod;
-    let min_j: i32 = jj - k_i_j_mod;
-    let max_i: i32 = ii + k_i_j_mod;
-    let max_j: i32 = jj + k_i_j_mod;
+
+    let (min_i, max_i) = get_valid_dim_bounds(ii as usize, k_i_j_mod as usize, 0, abos_mutable.p.nrows());
+    let (min_j, max_j) = get_valid_dim_bounds(jj as usize, k_i_j_mod as usize, 0, abos_mutable.p.ncols());
 
     let mut p1: f64 = 0.0;
-    let mut p_counter = 0;
     unsafe {
-        if min_i >= 0 && min_j >= 0 {
-            p1 += *p.get_unchecked((min_i as usize, min_j as usize));
-            p_counter += 1;
-        }
-        if max_i < p.nrows() as i32 && (max_j as usize) < p.ncols() {
-            p1 += *p.get_unchecked((max_i as usize, max_j as usize));
-            p_counter += 1;
-        }
-        if min_i >= 0 && max_j < p.ncols() as i32 {
-            p1 += *p.get_unchecked((min_i as usize, max_j as usize));
-            p_counter += 1;
-        }
-        if max_i < p.nrows() as i32 && min_j >= 0 {
-            p1 += *p.get_unchecked((max_i as usize, min_j as usize));
-            p_counter += 1;
-        }
-        if p_counter == 0 {
-            p1 = -INFINITY;
-        } else {
-            p1 /= p_counter as f64;
-        }
+        p1 += (*p.get_unchecked((min_i , min_j)))
+            + (*p.get_unchecked((max_i,  max_j)))
+            + (*p.get_unchecked((min_i,  max_j)))
+            + (*p.get_unchecked((max_i,  min_j)));
+        p1 /= 4.0;
     }
     p1
 }
