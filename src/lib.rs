@@ -96,7 +96,7 @@ pub fn abos_run(abos_inputs: &ABOSInputs) {
         //output_all_matrixes(&&abos_mutable, &abos_immutable);
     }
 
-    output_all_matrixes(&&abos_mutable, &abos_immutable);
+    //output_all_matrixes(&&abos_mutable, &abos_immutable);
     //Initialization will swap so greater number of rows than cols
     if abos_immutable.xy_swaped {
         abos_mutable.p.swap_columns(0, 1);

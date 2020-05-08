@@ -182,7 +182,7 @@ pub fn get_ranges(points: &MatrixMN<f64, Dynamic, U3>) -> (f64, f64, f64, f64, f
     let y2 = points.column(1).max();
     let z1 = points.column(2).min();
     let z2 = points.column(2).max();
-
+    //println!("{}, {}, {}, {}, {}, {}", x1, x2, y1, y2, z1, z2);
     (x1, x2, y1, y2, z1, z2)
 }
 
@@ -190,6 +190,7 @@ pub fn swap_and_get_ranges(
     points: &mut MatrixMN<f64, Dynamic, U3>,
 ) -> (f64, f64, f64, f64, f64, f64, bool) {
     let (x1, x2, y1, y2, z1, z2) = get_ranges(&points);
+    //println!("{}, {}, {}, {}, {}, {}", x1, x2, y1, y2, z1, z2);
     if f64::abs(x1 - x2) < f64::abs(y1 - y2) {
         points.swap_columns(0, 1);
         let (x1, x2, y1, y2, z1, z2) = get_ranges(&points);
@@ -213,7 +214,7 @@ pub fn get_min_chebyshev_distance_kdi(
         let distances: MatrixMN<f64, U1, U3> = row.clone_owned() - xyz_points.row(closest_index);
         let distances = distances.abs();
 
-        println!("distances[0] {}, distances[1] {}", distances[0], distances[1]);
+        //println!("distances[0] {}, distances[1] {}", distances[0], distances[1]);
 
         let max_xy_distance = if distances[0] > distances[1] {
             distances[0] + 1.0
@@ -253,6 +254,7 @@ pub fn compute_grid_dimensions(
             break;
         }
     }
+    if i1 == 0 {i1 = filter as i32} //handle case where initial potential val larger than filter
 
     //step 5 find your grid size for your smaller dimension such that it is as close to that of il as possible
     let j1: i32 = f64::round((y2 - y1) / (x2 - x1) * (i1 as f64 - 1.0)) as i32;
@@ -317,7 +319,7 @@ pub fn filter_points_kd(
         let mut new_point: Vec<f64> = vec![row[0], row[1], row[2]]; //iif * 3.0
         
         if distances[0] < rs && distances[1] < rs{
-            println!("distances[0] {}, distances[1] {}", distances[0], distances[1]);
+            //println!("distances[0] {}, distances[1] {}", distances[0], distances[1]);
             unsafe {
                 new_point[0] = (row[0] + points.get_unchecked((ii, 0)) ) / 2.0;
                 new_point[1] = (row[1] + points.get_unchecked((ii, 1)) ) / 2.0;
