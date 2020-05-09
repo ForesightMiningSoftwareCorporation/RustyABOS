@@ -23,15 +23,23 @@ pub fn new_abos(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
     let (x1, x2, y1, y2, z1, z2, xy_swaped) = swap_and_get_ranges(&mut xyz_points);
 
     let mut kdtree = initialize_kdtree_from_matrix(&xyz_points);
-    //step 3: get Chebyshev distance
-    let dmc = get_min_chebyshev_distance_kdi(&xyz_points, &kdtree);
+    let dmc = get_min_chebyshev_distance(&xyz_points, &kdtree);
+    assert_ne!(dmc, 0.0);
     //step 4: get the grid dimensions and resolution
     let (i1, j1, dx, dy) = compute_grid_dimensions(x1, x2, y1, y2, dmc, abos_inputs.filter);
     let res_x = (x2 - x1) / abos_inputs.filter;
     let res_y = (y2 - y1) / abos_inputs.filter;
     let rs = if res_x > res_y { res_x } else { res_y };
 
-    filter_points_kd(&mut xyz_points, &mut kdtree, rs);
+    filter_points(&mut xyz_points, &mut kdtree, rs);
+    
+    //Grid enlargement
+    let x1 = x1 - abos_inputs.grid_enlargement as f64 * dx;
+    let x2 = x2 + abos_inputs.grid_enlargement as f64 * dx;
+    let y1 = y1 - abos_inputs.grid_enlargement as f64 * dx;
+    let y2 = y2 + abos_inputs.grid_enlargement as f64 * dx;
+    let i1 = i1 + 2*abos_inputs.grid_enlargement;
+    let j1 = j1 + 2*abos_inputs.grid_enlargement;
 
     //Create empty vectors
     let nb: MatrixMN<usize, Dynamic, Dynamic> = MatrixMN::from_element_generic(
@@ -200,8 +208,11 @@ pub fn swap_and_get_ranges(
     }
 }
 
-//
-pub fn get_min_chebyshev_distance_kdi(
+//ABOS calls for the maximum minimum chebyshev distance
+// Art of Surface Interpolation 2
+//2.1 The definition of the interpolation function and notations
+//dmc = min { max {|xi - xj|,|yi - yj|} }
+pub fn get_min_chebyshev_distance(
     xyz_points: &MatrixMN<f64, Dynamic, U3>,
     kdtree: &KdTree<f64, usize, [f64; 2]>,
 ) -> f64 {
@@ -214,12 +225,12 @@ pub fn get_min_chebyshev_distance_kdi(
         let distances: MatrixMN<f64, U1, U3> = row.clone_owned() - xyz_points.row(closest_index);
         let distances = distances.abs();
 
-        //println!("distances[0] {}, distances[1] {}", distances[0], distances[1]);
+        println!("[get_min_chebyshev_distance] distances[0] {}, distances[1] {}", distances[0], distances[1]);
 
         let max_xy_distance = if distances[0] > distances[1] {
-            distances[0] + 1.0
+            distances[0]
         } else {
-            distances[1] + 1.0
+            distances[1]
         };
 
         if max_xy_distance < min_chebyshev_distance {
@@ -296,7 +307,7 @@ pub fn compute_rl(degree: i8, k_max: usize) -> (usize, f64) {
 //If points are within the RS term will average them together
 //Will create new point and kdtree with filtered points and set old points and kdtree to new version
 //with kd tree grab the two nearest neigbors as self is included
-pub fn filter_points_kd(
+pub fn filter_points(
     points: &mut MatrixMN<f64, Dynamic, U3>,
     kdtree: &mut KdTree<f64, usize, [f64; 2]>,
     rs: f64
@@ -319,11 +330,10 @@ pub fn filter_points_kd(
         let mut new_point: Vec<f64> = vec![row[0], row[1], row[2]]; //iif * 3.0
         
         if distances[0] < rs && distances[1] < rs{
-            //println!("distances[0] {}, distances[1] {}", distances[0], distances[1]);
             unsafe {
-                new_point[0] = (row[0] + points.get_unchecked((ii, 0)) ) / 2.0;
-                new_point[1] = (row[1] + points.get_unchecked((ii, 1)) ) / 2.0;
-                new_point[2] = (row[2] + points.get_unchecked((ii, 2)) ) / 2.0;
+                new_point[0] = (row[0] + points.get_unchecked((closest_index, 0)) ) / 2.0;
+                new_point[1] = (row[1] + points.get_unchecked((closest_index, 1)) ) / 2.0;
+                new_point[2] = (row[2] + points.get_unchecked((closest_index, 2)) ) / 2.0;
             }
             skip_index.insert(closest_index);
         }
@@ -332,3 +342,84 @@ pub fn filter_points_kd(
     *points = initialize_dmatrix(&points_filtered);
     *kdtree = initialize_kdtree_from_matrix(points);
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::{initialize_kdtree_from_matrix, initialize_dmatrix, 
+                                    get_min_chebyshev_distance, swap_and_get_ranges,
+                                    filter_points};
+    extern crate nalgebra as na;
+    use na::{MatrixMN, Dynamic, U3};
+
+
+    #[test]
+    fn swap_and_get_ranges_test() {
+        let points_fix = na::Matrix3::new(1.0, 2.0, 3.0,
+                                          2.0, 4.0, 6.0,
+                                          3.0, 6.0, 9.0);
+        let mut xyz_points: MatrixMN<f64, Dynamic, U3> = na::convert(points_fix);
+        let (x1, x2, y1, y2, z1, z2, xy_swaped) = swap_and_get_ranges(&mut xyz_points);
+
+        let check_points_fix = na::Matrix3::new(2.0, 1.0, 3.0,
+                                                4.0, 2.0, 6.0,
+                                                6.0, 3.0, 9.0);
+        let check_points: MatrixMN<f64, Dynamic, U3> = na::convert(check_points_fix);
+
+        assert_eq!(xyz_points, check_points);
+        assert_eq!((x1, x2, y1, y2, z1, z2, xy_swaped), (2.0, 6.0, 1.0, 3.0, 3.0, 9.0, true));
+    }
+
+    #[test]
+    fn initialize_dmatrix_test() {
+        //making initial 2d vector
+        let mut points: Vec<Vec<f64>> = vec![];
+        for ii in 0..3 {
+            //making f64 then converting seemse better than casting f64 3 times
+            let iif = 1.0 + ii as f64;
+            let new_point: Vec<f64> = vec!(iif, iif * 2.0, iif * 3.0);
+            //let new_point:Vec<f64> = vec!(ii , (ii*2) as f64, (ii*3) as f64);
+            points.push(new_point);
+        }
+
+        let xyz_points: MatrixMN<f64, Dynamic, U3> = initialize_dmatrix(&points);
+
+        let check_xyz = na::Matrix3::new(1.0, 2.0, 3.0,
+                                         2.0, 4.0, 6.0,
+                                         3.0, 6.0, 9.0);
+        let check_xyz: MatrixMN<f64, Dynamic, U3> = na::convert(check_xyz);
+
+        //step 1: make an array with all the points
+        assert_eq!(xyz_points, check_xyz);
+    }
+
+    #[test]
+    fn min_chebyshev_dist_test() {
+        let points = na::Matrix3::new(   1.0, 2.0, 3.0,
+                                         2.0, 4.0, 6.0,
+                                         3.0, 6.0, 9.0);
+        let check_xyz: MatrixMN<f64, Dynamic, U3> = na::convert(points);
+        let kdtree = initialize_kdtree_from_matrix(&check_xyz);
+        let cheby_dist = get_min_chebyshev_distance(&check_xyz, &kdtree);
+        assert_eq!(2.0, cheby_dist);
+    }
+
+    #[test]
+    fn filter_points_test(){
+        let mut points = na::Matrix3::new(  1.0, 1.0, 1.0,
+                                            3.0, 3.0, 3.0,
+                                            4.0, 4.0, 4.0);
+        let mut points = na::convert(points);
+        
+        let filtered: Vec<Vec<f64>> = vec![ vec![1.0, 1.0, 1.0],
+                                                vec![3.5, 3.5, 3.5]];                                    
+        let filtered = initialize_dmatrix(&filtered);
+        let mut kdtree = initialize_kdtree_from_matrix(&points);
+        let rs = 1.1;
+        filter_points(& mut points, & mut kdtree, rs);
+        println!("points{:?} ", points);
+        println!("points{:?} ", filtered);
+        assert_eq!(points, filtered);
+    }
+}
+

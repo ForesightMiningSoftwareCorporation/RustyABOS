@@ -11,6 +11,7 @@ pub struct ABOSInputs {
     //INPUT resolution parameter
     pub points: Vec<Vec<f64>>,
     pub q_smooth: f64,
+    pub grid_enlargement: i32
     //user input degree of smoothing default 0.5
 }
 

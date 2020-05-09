@@ -101,6 +101,24 @@ pub fn abos_run(abos_inputs: &ABOSInputs) {
     if abos_immutable.xy_swaped {
         abos_mutable.p.swap_columns(0, 1);
     }
+
+    //Getting desired slice
+    println!("nrows {:?}, ncols {:?}, grid_enlargement {:?},", abos_mutable.p.nrows(), abos_mutable.p.ncols(), abos_inputs.grid_enlargement);
+    if abos_inputs.grid_enlargement > 0 {
+        // let slice = abos_mutable.p.slice((abos_inputs.grid_enlargement as usize, abos_inputs.grid_enlargement as usize),
+        //     ((abos_immutable.i1 - 2*abos_inputs.grid_enlargement) as usize,  
+        //      (abos_immutable.j1 - 2*abos_inputs.grid_enlargement) as usize));
+        abos_mutable.p = abos_mutable.p.remove_rows(
+            (abos_immutable.i1 - abos_inputs.grid_enlargement - 1) as usize, 
+            abos_inputs.grid_enlargement as usize);
+        abos_mutable.p = abos_mutable.p.remove_columns(
+            (abos_immutable.j1 - abos_inputs.grid_enlargement - 1) as usize, 
+                abos_inputs.grid_enlargement as usize);
+        abos_mutable.p = abos_mutable.p.remove_rows(0, abos_inputs.grid_enlargement as usize);
+        abos_mutable.p = abos_mutable.p.remove_columns(0, abos_inputs.grid_enlargement as usize);                      
+    }
+    println!("nrows {:?}, ncols {:?}, grid_enlargement {:?},", abos_mutable.p.nrows(), abos_mutable.p.ncols(), abos_inputs.grid_enlargement);
+
 }
 
 fn calculate_dz(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
@@ -397,70 +415,3 @@ pub fn output_all_matrixes(abos_mutable: &ABOSMutable, abos_immutable: &ABOSImmu
     );
     //println!("{}", abos_mutable.p.len())
 }
-
-//
-// #[cfg(test)]
-// mod tests {
-//     use crate::{ABOSGrid, swap_and_get_ranges, initialize_dmatrix,
-//                 initialize_kdtree_from_matrix, get_min_chebyshev_distance_kdi};
-//
-//     extern crate nalgebra as na;
-//
-//     use na::{MatrixMN, Dynamic, U3};
-//
-//     extern crate rand;
-//
-//     use rand::prelude::*;
-//
-//
-//     #[test]
-//     fn test_swap_and_get_ranges() {
-//         let points_fix = na::Matrix3::new(1.0, 2.0, 3.0,
-//                                           2.0, 4.0, 6.0,
-//                                           3.0, 6.0, 9.0);
-//         let mut xyz_points: MatrixMN<f64, Dynamic, U3> = na::convert(points_fix);
-//         let (x1, x2, y1, y2, z1, z2, xy_swaped) = swap_and_get_ranges(&mut xyz_points);
-//
-//         let check_points_fix = na::Matrix3::new(2.0, 1.0, 3.0,
-//                                                 4.0, 2.0, 6.0,
-//                                                 6.0, 3.0, 9.0);
-//         let check_points: MatrixMN<f64, Dynamic, U3> = na::convert(check_points_fix);
-//
-//         assert_eq!(xyz_points, check_points);
-//         assert_eq!((x1, x2, y1, y2, z1, z2, xy_swaped), (2.0, 6.0, 1.0, 3.0, 3.0, 9.0, true));
-//     }
-//
-//     #[test]
-//     fn test_initialize_dmatrix() {
-//         //making initial 2d vector
-//         let mut points: Vec<Vec<f64>> = vec![];
-//         for ii in 0..3 {
-//             //making f64 then converting seemse better than casting f64 3 times
-//             let iif = 1.0 + ii as f64;
-//             let new_point: Vec<f64> = vec!(iif, iif * 2.0, iif * 3.0);
-//             //let new_point:Vec<f64> = vec!(ii , (ii*2) as f64, (ii*3) as f64);
-//             points.push(new_point);
-//         }
-//
-//         let xyz_points: MatrixMN<f64, Dynamic, U3> = initialize_dmatrix(points);
-//
-//         let check_xyz = na::Matrix3::new(1.0, 2.0, 3.0,
-//                                          2.0, 4.0, 6.0,
-//                                          3.0, 6.0, 9.0);
-//         let check_xyz: MatrixMN<f64, Dynamic, U3> = na::convert(check_xyz);
-//
-//         //step 1: make an array with all the points
-//         assert_eq!(xyz_points, check_xyz);
-//     }
-//
-//     #[test]
-//     fn test_min_chebyshev_dist() {
-//         let check_xyz = na::Matrix3::new(1.0, 2.0, 3.0,
-//                                          2.0, 4.0, 6.0,
-//                                          3.0, 6.0, 9.0);
-//         let check_xyz: MatrixMN<f64, Dynamic, U3> = na::convert(check_xyz);
-//         let kdtree = initialize_kdtree_from_matrix(&check_xyz);
-//         let cheby_dist = get_min_chebyshev_distance_kdi(&check_xyz, &kdtree);
-//         assert_eq!(2.0, cheby_dist);
-//     }
-// }

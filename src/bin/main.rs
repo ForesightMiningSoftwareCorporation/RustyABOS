@@ -19,6 +19,7 @@ fn main() {
         filter: 100.0,
         points,
         q_smooth: 0.5,
+        grid_enlargement: 5
     };
 
     //println!("inputs.points {:?}", inputs.points);
