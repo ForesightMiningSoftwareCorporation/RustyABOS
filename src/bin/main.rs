@@ -1,5 +1,5 @@
-use abos::abos_run;
-use abos::abos_structs::ABOSInputs;
+use abos::abos_run_autogrid;
+use abos::abos_structs::{ABOSInputs, ABOSOutputs};
 
 extern crate rand;
 //use rand::prelude::*;
@@ -24,8 +24,7 @@ fn main() {
 
     //println!("inputs.points {:?}", inputs.points);
 
-    abos_run(&inputs);
-
+    let _outputs = abos_run_autogrid(&inputs);
     // test.per_parts_constant_interpolation();
     // ABOSGrid::calculation_loop(&mut test);
     //

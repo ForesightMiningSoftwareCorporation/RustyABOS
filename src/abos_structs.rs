@@ -1,6 +1,6 @@
 extern crate nalgebra as na;
 
-use nalgebra::{DVector, Dynamic, MatrixMN, U3};
+use nalgebra::{DVector, Dim, Dynamic, MatrixMN, U3};
 
 pub const INFINITY: f64 = 1.0f64 / 0.0f64;
 
@@ -11,8 +11,16 @@ pub struct ABOSInputs {
     //INPUT resolution parameter
     pub points: Vec<Vec<f64>>,
     pub q_smooth: f64,
-    pub grid_enlargement: i32
     //user input degree of smoothing default 0.5
+    pub grid_enlargement: i32
+}
+
+pub struct ABOSOutputs {
+    pub p: MatrixMN<f64, Dynamic, Dynamic>,
+    pub x_min: f64,
+    pub y_min: f64,
+    pub dx: f64,
+    pub dy: f64
 }
 
 pub struct ABOSMutable {

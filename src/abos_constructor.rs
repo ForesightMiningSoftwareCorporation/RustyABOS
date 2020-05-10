@@ -1,13 +1,13 @@
 extern crate nalgebra as na;
 
-use crate::abos_structs::{ABOSImmutable, ABOSInputs, ABOSMutable, INFINITY};
+use crate::abos_structs::{ABOSOutputs, ABOSInputs, ABOSImmutable, ABOSMutable, INFINITY};
 use kdtree::distance::squared_euclidean;
 use kdtree::KdTree;
 use nalgebra::{DMatrix, DVector, Dim, Dynamic, MatrixMN, U1, U3};
 use std::collections::BTreeSet; // used in point filtering
 
 
-pub fn new_abos(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
+pub fn new_abos_autogrid(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
     //unwrapping to 1d vector [x1, y1, z1, x2, y2, z2...]
     //real function call would just pass the vector into DMatrix
     let mut vec = Vec::new();
@@ -34,6 +34,111 @@ pub fn new_abos(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
     filter_points(&mut xyz_points, &mut kdtree, rs);
     
     //Grid enlargement
+    let x1 = x1 - abos_inputs.grid_enlargement as f64 * dx;
+    let x2 = x2 + abos_inputs.grid_enlargement as f64 * dx;
+    let y1 = y1 - abos_inputs.grid_enlargement as f64 * dy;
+    let y2 = y2 + abos_inputs.grid_enlargement as f64 * dy;
+    let i1 = i1 + 2*abos_inputs.grid_enlargement;
+    let j1 = j1 + 2*abos_inputs.grid_enlargement;
+
+    //Create empty vectors
+    let nb: MatrixMN<usize, Dynamic, Dynamic> = MatrixMN::from_element_generic(
+        Dynamic::from_usize(i1 as usize),
+        Dynamic::from_usize(j1 as usize),
+        0,
+    );
+
+    let z: DVector<f64> = xyz_points.column(2).clone_owned();
+
+    // These items must be calculated with calculated k_max
+    let r = 0;
+    let l = 0.0;
+
+    let k_u_v: MatrixMN<(usize, usize, usize), Dynamic, Dynamic> = MatrixMN::from_element_generic(
+        Dynamic::from_usize(i1 as usize),
+        Dynamic::from_usize(j1 as usize),
+        (0, 0, 0),
+    );
+
+    let mut abos_immutable = ABOSImmutable {
+        degree: abos_inputs.linear_tensioning_degree,
+        r,
+        l,
+        xyz_points, //INPUT all points XYZ
+        x1,         //minx
+        x2,         //maxx
+        y1,         //miny
+        y2,         //maxy
+        _z1: z1,    //min z
+        _z2: z2,    //max z
+        i1,         //xsize of grid
+        j1,         //ysize of grid
+        dx,         //size of grid on x
+        dy,         //size of grid on y
+        z,          //vector if z coordinates XYZ
+        nb, // Matrix of nearest points on grid. Containing indexes to nearest point in the XYZ array
+        k_u_v, // Grid distance of each grid to the point indexed in nb
+        k_max: 0, //maximal element of matrix k
+        xy_swaped: xy_swaped,
+        q_smooth: abos_inputs.q_smooth,
+    };
+
+    let p: MatrixMN<f64, Dynamic, Dynamic> = MatrixMN::from_element_generic(
+        Dynamic::from_usize(abos_immutable.i1 as usize),
+        Dynamic::from_usize(abos_immutable.j1 as usize),
+        0.0,
+    );
+    let dp: MatrixMN<f64, Dynamic, Dynamic> = p.clone_owned();
+    let t_smooth: MatrixMN<f64, Dynamic, Dynamic> = p.clone_owned();
+
+    let dz = abos_immutable.z.clone_owned();
+    let abos_mutable = ABOSMutable {
+        p,
+        dp,
+        dz,
+        t_smooth,
+    };
+
+    init_distance_point_matrixes_kdi(&mut abos_immutable, &abos_mutable, &kdtree);
+    let (r, l) = compute_rl(abos_inputs.linear_tensioning_degree, abos_immutable.k_max);
+    abos_immutable.r = r;
+    abos_immutable.l = l;
+
+    (abos_immutable, abos_mutable)
+}
+
+//TODO make this function for real
+//for now is copy of new_abos_autogrid
+pub fn new_abos_grid_file(abos_inputs: &ABOSInputs, grid_file: String) -> (ABOSImmutable, ABOSMutable){
+    let _grid_copy = grid_file;
+    //unwrapping to 1d vector [x1, y1, z1, x2, y2, z2...]
+    //real function call would just pass the vector into DMatrix
+    let mut vec = Vec::new();
+    for point in abos_inputs.points.iter() {
+        for ii in point.iter() {
+            vec.push(*ii);
+        }
+    }
+    //step 1: make an array with all the points
+    let mut xyz_points: MatrixMN<f64, Dynamic, U3> = initialize_dmatrix(&abos_inputs.points);
+
+    //step 2: get Point range information and swap as necessary
+    let (x1, x2, y1, y2, z1, z2, xy_swaped) = swap_and_get_ranges(&mut xyz_points);
+
+    let mut kdtree = initialize_kdtree_from_matrix(&xyz_points);
+    let dmc = get_min_chebyshev_distance(&xyz_points, &kdtree);
+    assert_ne!(dmc, 0.0);
+    //step 4: get the grid dimensions and resolution
+    let (i1, j1, dx, dy) = compute_grid_dimensions(x1, x2, y1, y2, dmc, abos_inputs.filter);
+
+    let res_x = (x2 - x1) / abos_inputs.filter;
+    let res_y = (y2 - y1) / abos_inputs.filter;
+    let rs = if res_x > res_y { res_x } else { res_y };
+
+    filter_points(&mut xyz_points, &mut kdtree, rs);
+    
+    //Grid enlargement
+    //Adjust min max point as this affects x,y,z point to i,j index
     let x1 = x1 - abos_inputs.grid_enlargement as f64 * dx;
     let x2 = x2 + abos_inputs.grid_enlargement as f64 * dx;
     let y1 = y1 - abos_inputs.grid_enlargement as f64 * dx;
@@ -106,6 +211,53 @@ pub fn new_abos(abos_inputs: &ABOSInputs) -> (ABOSImmutable, ABOSMutable) {
 
     (abos_immutable, abos_mutable)
 }
+
+
+//Will post process and output grid specified by user inputs
+//creates copy of p matrix
+impl ABOSOutputs {
+    pub fn new(abos_inputs: &ABOSInputs, abos_mutable: &ABOSMutable, abos_immutable: &ABOSImmutable) -> ABOSOutputs {
+        //Create empty vectors
+        let mut p_out: MatrixMN<f64, Dynamic, Dynamic> = MatrixMN::from_element_generic(
+            Dynamic::from_usize(abos_immutable.i1 as usize),
+            Dynamic::from_usize(abos_immutable.j1 as usize),
+            0.0,
+        );
+        p_out.copy_from(&abos_mutable.p);
+        
+        //output_all_matrixes(&&abos_mutable, &abos_immutable);
+        //Initialization will swap so greater number of rows than cols
+        if abos_immutable.xy_swaped {
+            p_out.swap_columns(0, 1);
+        }
+
+        //Getting desired slice
+        println!("nrows {:?}, ncols {:?}, grid_enlargement {:?},", p_out.nrows(), p_out.ncols(), abos_inputs.grid_enlargement);
+        if abos_inputs.grid_enlargement > 0 {
+            // let slice = abos_mutable.p.slice((abos_inputs.grid_enlargement as usize, abos_inputs.grid_enlargement as usize),
+            //     ((abos_immutable.i1 - 2*abos_inputs.grid_enlargement) as usize,  
+            //      (abos_immutable.j1 - 2*abos_inputs.grid_enlargement) as usize));
+            p_out = p_out.remove_rows(
+                (abos_immutable.i1 - abos_inputs.grid_enlargement - 1) as usize, 
+                abos_inputs.grid_enlargement as usize);
+            p_out = p_out.remove_columns(
+                (abos_immutable.j1 - abos_inputs.grid_enlargement - 1) as usize, 
+                    abos_inputs.grid_enlargement as usize);
+            p_out = p_out.remove_rows(0, abos_inputs.grid_enlargement as usize);
+            p_out = p_out.remove_columns(0, abos_inputs.grid_enlargement as usize);                      
+        }
+        println!("nrows {:?}, ncols {:?}, grid_enlargement {:?},", p_out.nrows(), p_out.ncols(), abos_inputs.grid_enlargement);
+
+        ABOSOutputs{
+            p: p_out,
+            x_min: abos_immutable.x1 + abos_inputs.grid_enlargement as f64 * abos_immutable.dx,
+            y_min: abos_immutable.y1 + abos_inputs.grid_enlargement as f64 * abos_immutable.dy,
+            dx: abos_immutable.dx,
+            dy: abos_immutable.dy
+        }
+    }
+}
+
 
 //
 pub fn init_distance_point_matrixes_kdi(
