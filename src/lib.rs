@@ -8,7 +8,7 @@ mod abos_constructor;
 pub mod abos_structs;
 mod io_system;
 
-use crate::abos_constructor::new_abos_autogrid;
+use crate::abos_constructor::{new_abos_autogrid, new_abos_grid_file};
 use crate::abos_structs::{ABOSOutputs, ABOSInputs, ABOSImmutable,  ABOSMutable, INFINITY};
 use crate::io_system::export_p_matrix;
 use std::cmp;
@@ -25,84 +25,16 @@ use std::cmp;
 // 6. If the maximal difference max { DZ, ,i=1,..., n } does not exceed defined precision, the algorithm is finished
 // 7. P→DP, continue from step 2 again (= start the next iteration cycle)
 
-pub fn abos_run_autogrid(abos_inputs: &ABOSInputs) -> ABOSOutputs {
+pub fn abos_run_autogrid(abos_inputs: &ABOSInputs) -> ABOSOutputs{
     //1 Filtering points XYZ, specification of the grid, computation of the matrices NB and K, Z→DZ, 0→DP
     let (abos_immutable, mut abos_mutable) = new_abos_autogrid(&abos_inputs);
-    // //Calculates k_u_v and kmax
-    println!(
-        "x cells {} y cells {} points {}",
-        abos_immutable.i1,
-        abos_immutable.j1,
-        abos_immutable.xyz_points.len() / 3
-    );
-    //println!("--------//1 Initialization");
-    //output_all_matrixes(&&abos_mutable, &abos_immutable);
-    calculate_dz(&mut abos_mutable, &abos_immutable);
-
-    let mut n = 1000;
-    while n > 0 {
-        n -= 1;
-        //2 Per partes constant interpolation of values DZ into the matrix P
-        per_parts_constant_interpolation(&mut abos_mutable, &abos_immutable);
-        //export_p_matrix(&&abos_mutable, &abos_immutable, "afterPpli");
-        //println!("--------//2 Per partes constant interpolation of values DZ into the matrix P");
-        //output_all_matrixes(&&abos_mutable, &abos_immutable);
-
-        //3 Tensioning and smoothing of the matrix P
-        tension_loop(&mut abos_mutable, &abos_immutable);
-
-        //export_p_matrix(&&abos_mutable, &abos_immutable, "afterTension");
-        //println!("--------//3 tensioning");
-        //output_all_matrixes(&&abos_mutable, &abos_immutable);
-
-        linear_tension_loop(&mut abos_mutable, &abos_immutable);
-        //export_p_matrix(&&abos_mutable, &abos_immutable, "afterLinearTension");
-
-        //println!("--------//3 linear tensioning");
-        //output_all_matrixes(&&abos_mutable, &abos_immutable);
-
-        smoothing_loop(&mut abos_mutable, &abos_immutable);
-        //export_p_matrix(&&abos_mutable, &abos_immutable, "afterSmoothing");
-        //println!("{:.1}", abos_mutable.p);
-        //println!("--------//3 smoothing");
-        //output_all_matrixes(&&abos_mutable, &abos_immutable);
-
-        //4 p + dp -> P
-        abos_mutable.p += &abos_mutable.dp;
-        //println!("--------//4 p + dp -> P");
-        //output_all_matrixes(&&abos_mutable, &abos_immutable);
-        //back to 4
-
-        //5 Dz - p => dz (Z - f (Xi, Yi) →DZi )
-        calculate_dz(&mut abos_mutable, &abos_immutable);
-        //println!("--------//5 Dz - p => dz (Z - f (Xi, Yi) →DZi )");
-        //output_all_matrixes(&&abos_mutable, &abos_immutable);
-        // abos_mutable.dz -= abos_mutable.p;
-
-        //6 calculate maximal difference
-        //export_p_matrix(&&abos_mutable, &abos_immutable, "beforeDZCheck");
-        let max_difference = abos_mutable.dz.max();
-        println!("max_difference {}", max_difference);
-        if max_difference.abs() < 0.000000001 {
-            export_p_matrix(&&abos_mutable, &abos_immutable, "exportConverged");
-            break;
-        }
-        //println!("--------//6 calculate maximal difference {}", max_difference);
-        //output_all_matrixes(&&abos_mutable, &abos_immutable);
-
-        //7 p -> Dp
-        abos_mutable.dp.copy_from(&abos_mutable.p);
-        //println!("--------//7 p -> Dp");
-        //output_all_matrixes(&&abos_mutable, &abos_immutable);
-    }
+    abos_run(&mut abos_mutable,  &abos_immutable);
     ABOSOutputs::new(&abos_inputs, &abos_mutable, &abos_immutable)
 }
 
-
-
-pub fn abos_run_autogrid_v2(abos_inputs: &ABOSInputs) -> ABOSOutputs{
+pub fn abos_run_grid_file(abos_inputs: &ABOSInputs, grid_file: String) -> ABOSOutputs{
     //1 Filtering points XYZ, specification of the grid, computation of the matrices NB and K, Z→DZ, 0→DP
-    let (abos_immutable, mut abos_mutable) = new_abos_autogrid(&abos_inputs);
+    let (abos_immutable, mut abos_mutable) = new_abos_grid_file(&abos_inputs, grid_file);
     abos_run(&mut abos_mutable,  &abos_immutable);
     ABOSOutputs::new(&abos_inputs, &abos_mutable, &abos_immutable)
 }
@@ -477,36 +409,4 @@ pub fn output_all_matrixes(abos_mutable: &ABOSMutable, abos_immutable: &ABOSImmu
         abos_immutable.nb, abos_immutable.z, abos_mutable.dz, abos_mutable.dp, abos_mutable.p
     );
     //println!("{}", abos_mutable.p.len())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{ABOSInputs, abos_run_autogrid, abos_run_autogrid_v2};
-    extern crate nalgebra as na;
-    use na::{MatrixMN, Dynamic, U3};
-
-    #[test]
-    fn abos_run_test() {
-        let mut points: Vec<Vec<f64>> = vec![];
-        for ii in 0..3 {
-            //making f64 then converting seemse better than casting f64 3 times
-            let iif = 1.0 + ii as f64;
-            let new_point: Vec<f64> = vec![iif, iif * 2.0, iif * 3.0];
-            //let new_point:Vec<f64> = vec!(ii , (ii*2) as f64, (ii*3) as f64);
-            points.push(new_point);
-        }
-    
-        let inputs = ABOSInputs {
-            linear_tensioning_degree: 0,
-            filter: 100.0,
-            points,
-            q_smooth: 0.5,
-            grid_enlargement: 5
-        };
-
-        let out1 = abos_run_autogrid(&inputs);
-        let out2 = abos_run_autogrid_v2(&inputs);
-        assert_eq!(out1.p, out2.p);
-
-    }
 }
