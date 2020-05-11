@@ -27,6 +27,4 @@ fn main() {
     let _outputs = abos_run_autogrid(&inputs);
     // test.per_parts_constant_interpolation();
     // ABOSGrid::calculation_loop(&mut test);
-    //
-    // test.output_all_matrixes();
 }

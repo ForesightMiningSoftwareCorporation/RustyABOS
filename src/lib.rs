@@ -1,6 +1,17 @@
-///Crate to generate a surface with the ABOS algorithm proposed in Art of Surface Interpolation byM gr. Miroslav Dressler, Ph.D.
-/// http://m.dressler.sweb.cz/ABOS.htm
-///
+//! # Rusty ABOS
+//! 
+//! Crate to generate a surface with the ABOS algorithm proposed in Art of Surface Interpolation by Mgr. Miroslav Dressler, Ph.D.
+//!
+//! http://m.dressler.sweb.cz/ABOS.htm
+//!
+//! Interpolates z values across a grid given a set of xyz points
+//!
+//! # Important Functions and Structs
+//! Initalize `ABOSInputs` with points, set algorithm parameters, 
+//! Use `abos_run_autogrid` to autoset grid parameters as specified by ABOS algorithm
+//! Use `abos_run_grid_file` to use custom grid
+//! Use `ABOSOutputs` to get desired output
+
 extern crate approx;
 extern crate nalgebra as na;
 
@@ -13,18 +24,7 @@ use crate::abos_structs::{ABOSOutputs, ABOSInputs, ABOSImmutable,  ABOSMutable, 
 use crate::io_system::export_p_matrix;
 use std::cmp;
 
-//iteration cycle
-// 1. Filtering points XYZ, specification of the grid, computation of the matrices NB and
-// K, Z→DZ, 0→DP
-//test.init_distance_point_matrixes(); //prepare nb/k/kmax
-// 2. Per partes constant interpolation of values DZ into the matrix P
-// 3. Tensioning and smoothing of the matrix P
-//----3 sub steps Tensioning, Linear Tensioning, Smoothing
-// 4. P+DP→P
-// 5. Z - f(X Y) →DZi
-// 6. If the maximal difference max { DZ, ,i=1,..., n } does not exceed defined precision, the algorithm is finished
-// 7. P→DP, continue from step 2 again (= start the next iteration cycle)
-
+/// Function to run abos, with algorithm recommended grid cell size, with extents by input points extents
 pub fn abos_run_autogrid(abos_inputs: &ABOSInputs) -> ABOSOutputs{
     //1 Filtering points XYZ, specification of the grid, computation of the matrices NB and K, Z→DZ, 0→DP
     let (abos_immutable, mut abos_mutable) = new_abos_autogrid(&abos_inputs);
@@ -32,6 +32,7 @@ pub fn abos_run_autogrid(abos_inputs: &ABOSInputs) -> ABOSOutputs{
     ABOSOutputs::new(&abos_inputs, &abos_mutable, &abos_immutable)
 }
 
+/// Function to run abos, with grid file set cell size and extents
 pub fn abos_run_grid_file(abos_inputs: &ABOSInputs, grid_file: String) -> ABOSOutputs{
     //1 Filtering points XYZ, specification of the grid, computation of the matrices NB and K, Z→DZ, 0→DP
     let (abos_immutable, mut abos_mutable) = new_abos_grid_file(&abos_inputs, grid_file);
@@ -39,6 +40,14 @@ pub fn abos_run_grid_file(abos_inputs: &ABOSInputs, grid_file: String) -> ABOSOu
     ABOSOutputs::new(&abos_inputs, &abos_mutable, &abos_immutable)
 }
 
+///Performs ABOS iteration cycle
+/// 1. Filtering points XYZ, specification of the grid, computation of the matrices NB and K, Z→DZ, 0→DP
+/// 2. Per partes constant interpolation of values DZ into the matrix P
+/// 3. Tensioning, Linear Tensioning, and Smoothing of the matrix P
+/// 4. P+DP→P
+/// 5. Z - f(X Y) →DZi
+/// 6. If the maximal difference max { DZ, ,i=1,..., n } does not exceed defined precision, the algorithm is finished
+/// 7. P→DP, continue from step 2 again (= start the next iteration cycle)
 pub fn abos_run(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable){
    // //Calculates k_u_v and kmax
    println!(
@@ -115,9 +124,9 @@ pub fn abos_run(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable){
     }
 }
 
-
+/// Calculate difference between predicted, and xyz point value in cell using bilinear interpolation.
 fn calculate_dz(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
-    // Uses bilinear interpolation
+    
     let mut dz_new = abos_immutable.z.clone();
 
     for (index, point) in abos_immutable.xyz_points.row_iter().enumerate() {
@@ -163,7 +172,8 @@ fn calculate_dz(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) 
     abos_mutable.dz.copy_from(&dz_new);
 }
 
-//
+/// Calculating distance to reference cells in linear_tension_loop()
+/// - See Art of Surface Interpolation 2.2.6
 fn get_scaled_u_v(u: f64, v: f64, n: f64) -> (f64, f64) {
     let (mut u_mod, mut v_mod) = (u, v);
     let uv_magnitude = (u * u + v * v).sqrt();
@@ -175,7 +185,8 @@ fn get_scaled_u_v(u: f64, v: f64, n: f64) -> (f64, f64) {
     (u_mod, v_mod)
 }
 
-//makes a weighted average of 4 corner cells, top right, top left, bot right, bot left
+/// Makes a weighted average of 4 corner cells, top right, top left, bot right, bot left
+/// - See Art of Surface Interpolation 2.2.5
 //TODO shift from corner check, to mid perimeter check
 fn tension_cell(ii: i32, jj: i32, k_i_j_mod: i32, abos_mutable: &mut ABOSMutable) -> f64 {
     //we need to get Pi , j=Pik , jPi , jkPi−k , jPi , j−k
@@ -195,6 +206,8 @@ fn tension_cell(ii: i32, jj: i32, k_i_j_mod: i32, abos_mutable: &mut ABOSMutable
     p1
 }
 
+/// Sets Z value of cell to nearest known value, equivalent to voronoi
+/// - See Art of Surface Interpolation 2.2.4
 pub fn per_parts_constant_interpolation(
     abos_mutable: &mut ABOSMutable,
     abos_immutable: &ABOSImmutable,
@@ -210,6 +223,8 @@ pub fn per_parts_constant_interpolation(
     }
 }
 
+/// Makes a weighted average of 4 corner cells, top right, top left, bot right, bot left
+/// - See Art of Surface Interpolation 2.2.5
 pub fn tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
     let n = cmp::max(4, abos_immutable.k_max / 2 + 2); //TODO SWITCH BACK
     for n_countdown in (0..n).rev() {
@@ -230,6 +245,9 @@ pub fn tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutab
     }
 }
 
+/// Calculates modified weighted average value for cell
+/// - See Art of Surface Interpolation 2.2.6
+/// - Has considerations and weighting for corner and edge cell not specified by paper
 fn linear_tension_cell(
     q: f64,
     ii: usize,
@@ -276,6 +294,9 @@ fn linear_tension_cell(
     }
 }
 
+/// Modifies the matrix P according to the formula for weighted average
+/// - Has degrees of linear tension specified by user inputs
+/// - See Art of Surface Interpolation 2.2.6
 pub fn linear_tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
     let n = cmp::min(4, abos_immutable.k_max / 2 + 2); //TODO SWITCH BACK
     for n_countdown in (1..n + 1).rev() {
@@ -303,6 +324,8 @@ pub fn linear_tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOS
     }
 }
 
+/// Adjustemnts to linear tension specified in
+/// - See Art of Surface Interpolation 3.4.2 Degrees of linear tensioning.
 fn get_q_linear_tension(abos_immutable: &ABOSImmutable, k_i_j: usize) -> f64 {
     //println!("self.l {}, self.k_max {}", self.l, self.k_max);
     match abos_immutable.degree {
@@ -312,13 +335,14 @@ fn get_q_linear_tension(abos_immutable: &ABOSImmutable, k_i_j: usize) -> f64 {
     }
 }
 
-//tt : midpoint, checking window from
-//dt : amount to look above below
-//min_i : minimum acceptable value, inclusive
-//max_i  : maximum acceptable value exclusive
-// returns (min_bound, max_bound)  both inclusive indexes
-// where min_bound = tt-dt || min_t
-// where max_bound = tt+dt || max_t - 1
+/// Function to manage bound checking with edge and corner cells
+/// - tt : midpoint, checking window from
+/// - dt : amount to look above below
+/// - min_i : minimum acceptable value, inclusive
+/// - max_i  : maximum acceptable value exclusive
+/// - returns (min_bound, max_bound)  both inclusive indexes
+/// - where min_bound = tt-dt || min_t
+/// - where max_bound = tt+dt || max_t - 1
 pub fn get_valid_dim_bounds(tt: usize, dt: usize, min_t: usize, max_t: usize) -> (usize, usize) {
     let lower_bound = if tt < dt || tt - dt < min_t {
             min_t
@@ -333,6 +357,8 @@ pub fn get_valid_dim_bounds(tt: usize, dt: usize, min_t: usize, max_t: usize) ->
     (lower_bound, upper_bound)
 }
 
+/// Setting smoothing parameter for each cell
+/// Art of Surface Interpolation 2.2.7 Smoothing.
 pub fn set_t_smooth(abos_mutable: &mut ABOSMutable) {
     //Set initial tt matrix
     for (ii, row) in abos_mutable.p.row_iter().enumerate() {
@@ -361,6 +387,9 @@ pub fn set_t_smooth(abos_mutable: &mut ABOSMutable) {
     }
 }
 
+/// Setting smoothing parameter for each cell
+/// Has degrees of linear tension specified by user inputs
+/// See Art of Surface Interpolation 2.2.7 Smoothing
 pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable) {
     let n = cmp::max(4, abos_immutable.k_max * (abos_immutable.k_max / 16));
 
@@ -403,7 +432,7 @@ pub fn smoothing_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmut
     }
 }
 
-pub fn output_all_matrixes(abos_mutable: &ABOSMutable, abos_immutable: &ABOSImmutable) {
+fn output_all_matrixes(abos_mutable: &ABOSMutable, abos_immutable: &ABOSImmutable) {
     println!(
         "NB {:.1} Z{:.1} DZ{:.1} DP{:.1} P{:.1}",
         abos_immutable.nb, abos_immutable.z, abos_mutable.dz, abos_mutable.dp, abos_mutable.p
