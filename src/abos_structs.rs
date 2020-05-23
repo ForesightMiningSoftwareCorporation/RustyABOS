@@ -2,7 +2,7 @@
 #![warn(missing_docs)]
 extern crate nalgebra as na;
 
-use nalgebra::{DVector, Dim, Dynamic, MatrixMN, U3};
+use nalgebra::{DVector, Dynamic, MatrixMN, U3};
 
 /// Custom set infinity
 pub const INFINITY: f64 = 1.0f64 / 0.0f64;
@@ -10,17 +10,20 @@ pub const INFINITY: f64 = 1.0f64 / 0.0f64;
 ///Input points and Algorithm inputs
 ///Grid specified by grid files, or autoset by function call 
 pub struct ABOSInputs {
-    /// User Inputs
+    /// User input degree of linear tensioning.  There are four degrees of linear tensioning (0-3).
+    /// See Art of Surface Interpolation sectioin 3.4.2
     pub linear_tensioning_degree: i8,
     /// INPUT resolution used in filtering points to ensure single point per cell
-    /// See 
+    /// See Art of Surface Interpolation sec 2.2.1
     pub filter: f64,
-    
+    /// 2d vector of points [[x1, y1, z1], [x2, y2, z2]]
     pub points: Vec<Vec<f64>>,
     /// User input degree of smoothing default 0.5
     /// See Art of Surface Interpolation sectioin 3.4.2
     pub q_smooth: f64,
-    
+    /// User input for enlarging grid during calculation which can suppress behavior of contours
+    /// trending perpindicular to the grid bondary
+    /// See Art of Surface Interpolation sectioin 3.4.3
     pub grid_enlargement: i32
 }
 
@@ -46,7 +49,7 @@ pub struct ABOSMutable {
 
     /// Elements of the elevation matrix [i,j] size
     pub p: MatrixMN<f64, Dynamic, Dynamic>,
-    /// Intermediate matrix which holds previous P value or zero
+    // Intermediate matrix which holds previous P value or zero
     pub(crate) dp: MatrixMN<f64, Dynamic, Dynamic>,
     // Matrix of weights used in smoothing, same sze as p & dp
     pub(crate) t_smooth: MatrixMN<f64, Dynamic, Dynamic>,

@@ -17,7 +17,7 @@ extern crate nalgebra as na;
 
 mod abos_constructor;
 pub mod abos_structs;
-mod io_system;
+pub mod io_system;
 
 use crate::abos_constructor::{new_abos_autogrid, new_abos_grid_file};
 use crate::abos_structs::{ABOSOutputs, ABOSInputs, ABOSImmutable,  ABOSMutable, INFINITY};
@@ -232,7 +232,7 @@ pub fn tension_loop(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutab
             for (jj, col) in row.iter().enumerate() {
                 let mut k_i_j_mod = col.0; //If  k  is greater than the decreasing loop variable N, then k = N.
                 if k_i_j_mod > (n_countdown + 1) {
-                    k_i_j_mod = (n_countdown + 1);
+                    k_i_j_mod = n_countdown + 1;
                 }
                 let new_p = tension_cell(ii as i32, jj as i32, k_i_j_mod as i32, abos_mutable);
                 unsafe {
