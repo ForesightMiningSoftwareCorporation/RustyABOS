@@ -18,8 +18,10 @@ pub struct ABOSInputs {
     pub filter: f64,
     /// 2d vector of points [[x1, y1, z1], [x2, y2, z2]]
     pub points: Vec<Vec<f64>>,
-    /// User input degree of smoothing default 0.5
-    /// See Art of Surface Interpolation sectioin 3.4.2
+    /// User input degree of smoothing default 0.5, linearly scales smoothing
+    /// "..q is the parameter of the ABOS method controlling smoothness of the interpolation /
+    /// approximation (its default value is 0.5)"
+    /// See Art of Surface Interpolation sectioin 2.2.7
     pub q_smooth: f64,
     /// User input for enlarging grid during calculation which can suppress behavior of contours
     /// trending perpindicular to the grid bondary
