@@ -19,25 +19,26 @@ mod abos_constructor;
 pub mod abos_structs;
 pub mod io_system;
 
-use crate::abos_constructor::{new_abos_autogrid, new_abos_grid_file};
-use crate::abos_structs::{ABOSOutputs, ABOSInputs, ABOSImmutable,  ABOSMutable, INFINITY};
+use crate::abos_constructor::{new_abos_auto_grid, new_abos_manual_grid};
+use crate::abos_structs::{ABOSOutputs, ABOSAutoGridInputs, ABOSManualGridInputs,ABOSImmutable,  ABOSMutable, INFINITY};
 use crate::io_system::export_p_matrix;
 use std::cmp;
 
 /// Function to run abos, with algorithm recommended grid cell size, with extents by input points extents
-pub fn abos_run_autogrid(abos_inputs: &ABOSInputs) -> ABOSOutputs{
+pub fn abos_run_auto_grid(abos_inputs: &ABOSAutoGridInputs) -> ABOSOutputs{
     //1 Filtering points XYZ, specification of the grid, computation of the matrices NB and K, Z→DZ, 0→DP
-    let (abos_immutable, mut abos_mutable) = new_abos_autogrid(&abos_inputs);
+    let (abos_immutable, mut abos_mutable) = new_abos_auto_grid(&abos_inputs);
     abos_run(&mut abos_mutable,  &abos_immutable);
-    ABOSOutputs::new(&abos_inputs, &abos_mutable, &abos_immutable)
+    ABOSOutputs::new(&abos_mutable, &abos_immutable)
 }
 
 /// Function to run abos, with grid file set cell size and extents
-pub fn abos_run_grid_file(abos_inputs: &ABOSInputs, grid_file: String) -> ABOSOutputs{
+/// filter operates on true distance and not relative to cell size
+pub fn abos_run_manual_grid(abos_inputs: &ABOSManualGridInputs) -> Result<ABOSOutputs, std::io::Error>{
     //1 Filtering points XYZ, specification of the grid, computation of the matrices NB and K, Z→DZ, 0→DP
-    let (abos_immutable, mut abos_mutable) = new_abos_grid_file(&abos_inputs, grid_file);
+    let (abos_immutable, mut abos_mutable) = new_abos_manual_grid(&abos_inputs)?;
     abos_run(&mut abos_mutable,  &abos_immutable);
-    ABOSOutputs::new(&abos_inputs, &abos_mutable, &abos_immutable)
+    Ok(ABOSOutputs::new(&abos_mutable, &abos_immutable))
 }
 
 ///Performs ABOS iteration cycle

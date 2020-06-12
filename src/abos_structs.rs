@@ -9,12 +9,17 @@ pub const INFINITY: f64 = 1.0f64 / 0.0f64;
 
 ///Input points and Algorithm inputs
 ///Grid specified by grid files, or autoset by function call 
-pub struct ABOSInputs {
+pub struct ABOSAutoGridInputs {
     /// User input degree of linear tensioning.  There are four degrees of linear tensioning (0-3).
     /// See Art of Surface Interpolation sectioin 3.4.2
     pub linear_tensioning_degree: i8,
-    /// INPUT resolution used in filtering points to ensure single point per cell
+    /// INPUT Percent of the larger cell size, by which no 2 points should be within one another
+    /// a value of 1 would mean any point within max( x range, y range) will be averaged together
     /// See Art of Surface Interpolation sec 2.2.1
+    ///     let res_x = (x2 - x1) / abos_inputs.filter;
+    ///      let res_y = (y2 - y1) / abos_inputs.filter;
+    /// let rs = if res_x > res_y { res_x } else { res_y };
+
     pub filter: f64,
     /// 2d vector of points [[x1, y1, z1], [x2, y2, z2]]
     pub points: Vec<Vec<f64>>,
@@ -27,6 +32,39 @@ pub struct ABOSInputs {
     /// trending perpindicular to the grid bondary
     /// See Art of Surface Interpolation sectioin 3.4.3
     pub grid_enlargement: i32
+}
+
+/// Struct for user setting the the gridparameters
+pub struct ABOSManualGridInputs {
+    /// User input degree of linear tensioning.  There are four degrees of linear tensioning (0-3).
+    /// See Art of Surface Interpolation sectioin 3.4.2
+    pub linear_tensioning_degree: i8,
+    /// Exact distance setting by which to combine points.  recommended to be set so all cells have max 1 point
+    /// See Art of Surface Interpolation sec 2.2.1
+    pub filter: f64,
+    /// 2d vector of points [[x1, y1, z1], [x2, y2, z2]]
+    pub points: Vec<Vec<f64>>,
+    /// User input degree of smoothing default 0.5, linearly scales smoothing
+    /// "..q is the parameter of the ABOS method controlling smoothness of the interpolation /
+    /// approximation (its default value is 0.5)"
+    /// See Art of Surface Interpolation sectioin 2.2.7
+    pub q_smooth: f64,
+    /// User input for enlarging grid during calculation which can suppress behavior of contours
+    /// trending perpindicular to the grid bondary
+    /// See Art of Surface Interpolation sectioin 3.4.3
+    pub grid_enlargement: i32,
+    /// min x of points and output grid
+    pub x_min : f64,
+    /// min x of points and output grid
+    pub y_min : f64,
+    /// size of cell in x
+    pub dx : f64,
+    /// size of cell in y
+    pub dy : f64,
+    /// number of cells in x
+    pub nx : usize,
+    /// number of cells in y
+    pub ny : usize
 }
 
 ///Outputs to describe the calculated grid
@@ -106,6 +144,10 @@ pub struct ABOSImmutable {
     pub(crate) xy_swaped: bool,
     // User input smoothing parameter
     pub(crate) q_smooth: f64,
+    /// User input for enlarging grid during calculation which can suppress behavior of contours
+    /// trending perpindicular to the grid bondary
+    /// See Art of Surface Interpolation sectioin 3.4.3
+    pub grid_enlargement: i32,
 }
 
 impl ABOSImmutable {
