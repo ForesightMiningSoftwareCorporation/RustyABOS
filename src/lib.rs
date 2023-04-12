@@ -106,7 +106,7 @@ pub fn abos_run(abos_mutable: &mut ABOSMutable, abos_immutable: &ABOSImmutable){
         let max_difference = abos_mutable.dz.max();
         println!("max_difference {}", max_difference);
         if max_difference.abs() < 0.000000001 {
-            export_p_matrix(&&abos_mutable, &abos_immutable, "exportConverged");
+            // export_p_matrix(&&abos_mutable, &abos_immutable, "exportConverged");
             break;
         }
         //println!("--------//6 calculate maximal difference {}", max_difference);
